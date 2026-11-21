@@ -2,6 +2,9 @@
 title = "CTF Toolkit"
 port = 8787
 workdir_default = "~/ctf/evidence"
+# 从桌面图标/没有代理变量的环境启动时，给工具补这个代理（留空 = 不补）。
+# 终端里启动时 shell 自己的 http_proxy 优先，不会覆盖。
+proxy_env = "http://127.0.0.1:7897"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 工具注册表。每个 [[tool]] 渲染成 UI 里的一个表单。
@@ -14,6 +17,10 @@ workdir_default = "~/ctf/evidence"
 #             否则取目标的主机名），一个工具只标一个
 #   repeat    true = textarea 一行一个，每行都带一次 flag
 #   raw       true = shell 模式下原样插入，不做引号转义
+# 工具级：
+#   ok_codes   视为"成功"的退出码列表（默认 [0]；ysoserial 列链是 64）
+#   strip_proxy true = 丢掉环境里的 http(s)/all_proxy（给内置 httpx 的 python 工具用，
+#              否则 socks 代理会让它 ImportError: socksio not installed），代理请填 --proxy 字段
 # {{TARGET}} 在字段值、附加参数里都会被顶部目标替换。
 # presets：点一下先重置表单，再按 set（键可以是字段序号 / flag / 标签）填值，
 #          最后把 args 放进「附加参数」（仍可手改）。
@@ -150,6 +157,7 @@ category = "brute"
 icon = "🧭"
 desc = "目录扫描（自带默认字典、支持递归）"
 notes = "--exclude-status=404 排除干扰；-r 递归；--proxy 走 Clash"
+strip_proxy = true        # 环境里的 socks5 代理会让 dirsearch 的 httpx 直接 ImportError
 cmd = ["dirsearch"]
 fields = [
   { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
@@ -181,12 +189,14 @@ fields = [
   { flag = "-w", label = "字典", kind = "combo", options_from = "wordlists", ph = "字典路径", req = true },
   { flag = "-x", label = "扩展名", kind = "text", ph = "php,html,txt" },
   { flag = "-t", label = "线程", kind = "number", default = "30" },
+  { flag = "--exclude-length", label = "排除响应长度（软 404 用）", kind = "textarea", repeat = true, ph = "194", hint = "目标对任意路径都返回 200 时必须填" },
   { flag = "--domain", label = "vhost 域名", kind = "text", ph = "example.com" },
   { flag = "-k", label = "-k 忽略证书", kind = "bool", default = "1" },
   { flag = "--no-error", label = "隐藏错误", kind = "bool", default = "1" },
 ]
 presets = [
   { label = "目录爆破", args = "", set = { "0" = "dir", "-w" = "wordlists/common.txt", "-x" = "php,html,txt" } },
+  { label = "软 404 站点（任意路径都 200）", args = "", set = { "0" = "dir", "-w" = "wordlists/common.txt", "-x" = "php", "--exclude-length" = "194" } },
   { label = "子域 vhost", args = "", set = { "0" = "vhost", "-w" = "wordlists/raft-small-words.txt" } },
 ]
 
@@ -281,20 +291,27 @@ id = "fenjing"
 name = "fenjing"
 category = "vuln"
 icon = "🐍"
-desc = "SSTI（Jinja2）自动构造 payload，或直接打 URL 取 flag"
-notes = "crack 模式直接打目标；payload 模式只吐字符串\n有 WAF 时给 -e（如 length、replace）；字段名猜不准就用 --detect"
-cmd = ["fenjing"]
+desc = "SSTI（Jinja2）自动攻击：打表单取 flag，或按关键字生成 payload"
+notes = "crack = 直接打目标，-i 是参数名（多个逗号分隔），-e 成功后执行的命令\nscan = 只探测有没有 SSTI；crack-keywords = 不请求目标，按关键字文件生成 payload（要 -k + -c）\n有 WAF 时用 --tamper-cmd 做编码，或 --waf-keyword 指定特征"
+ok_codes = [0, 1]        # rc=1 = "Test form failed"（没测到注入点），不是崩溃
+cmd = ["fenjing"]        # click group：子命令必须排在所有选项前面（模式字段是位置参数）
 fields = [
-  { flag = "", label = "模式", kind = "select", options = ["crack", "payload"], default = "crack" },
+  { flag = "", label = "模式", kind = "select", options = ["crack", "scan", "crack-path", "crack-keywords"], default = "crack" },
   { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", tgt = true },
-  { flag = "-f", label = "表单字段", kind = "text", ph = "name" },
-  { flag = "-m", label = "HTTP 方法", kind = "select", options = ["", "GET", "POST"] },
-  { flag = "-e", label = "WAF 绕过", kind = "text", ph = "length,replace" },
-  { flag = "-a", label = "要执行的命令", kind = "text", ph = "ls /;cat /flag" },
+  { flag = "-i", label = "参数名（逗号分隔）", kind = "text", ph = "name", hint = "crack / crack-path 必填" },
+  { flag = "-m", label = "提交方式", kind = "select", options = ["", "GET", "POST"] },
+  { flag = "--cookies", label = "Cookie", kind = "text", ph = "PHPSESSID=..." },
+  { flag = "-e", label = "成功后执行命令", kind = "text", ph = "ls /;cat /flag" },
+  { flag = "-k", label = "关键字文件（crack-keywords）", kind = "text", ph = "keywords.txt" },
+  { flag = "-c", label = "关键字的命令（crack-keywords）", kind = "text", ph = "ls /" },
+  { flag = "--tamper-cmd", label = "payload 编码命令", kind = "text", ph = "base64" },
+  { flag = "--proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
 ]
 presets = [
-  { label = "打目标取 flag", args = "", set = { "0" = "crack", "-a" = "ls /;cat /flag" } },
-  { label = "只出 payload", args = "", set = { "0" = "payload", "-a" = "ls /" } },
+  { label = "打表单取 flag", args = "", set = { "0" = "crack", "-i" = "name", "-e" = "ls /;cat /flag" } },
+  { label = "只探测参数", args = "", set = { "0" = "crack", "-i" = "name" } },
+  { label = "全站扫一遍", args = "", set = { "0" = "scan" } },
+  { label = "生成 payload", args = "", set = { "0" = "crack-keywords", "-c" = "ls /" } },
 ]
 
 [[tool]]
@@ -374,6 +391,7 @@ icon = "☕"
 desc = "Java 反序列化 payload 生成（已带 --add-opens，JDK 27 可跑）"
 notes = "不给链名就列出所有链；URLDNS 用来验证出网/DNS\n不出网时优先 CommonsBeanutils1/CommonsCollections 系"
 allow_empty = true
+ok_codes = [0, 64]        # 列链模式 rsoserial 用 64 退出，输出是对的
 cmd = ["java", "--add-opens", "java.base/java.lang=ALL-UNNAMED", "--add-opens", "java.xml/com.sun.org.apache.xalan.internal.xsltc.trax=ALL-UNNAMED", "--add-opens", "java.xml/com.sun.org.apache.xalan.internal.xsltc.runtime=ALL-UNNAMED", "--add-opens", "java.base/java.util=ALL-UNNAMED", "-jar", "/home/xendr1a/ctf/tools/ysoserial-all.jar"]
 fields = [
   { flag = "", label = "链名", kind = "text", ph = "CommonsBeanutils1" },

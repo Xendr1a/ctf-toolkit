@@ -97,6 +97,10 @@ python3 -c "import tomllib;d=tomllib.load(open('tools.toml','rb'));print(len(d['
 字段速查：`kind` 支持 `text` / `textarea` / `select`(`options`)/ `bool`(`default="1"` 勾上)/ `combo`
 (`options_from="wordlists"` 出字典下拉)/ `number`；`flag` 留空 = 位置参数；`repeat = true` = 一行一个参数；
 `tgt = true` = 顶部目标自动填（一个工具只标一个）；要跑管道就 `mode = "shell"` + 一个 `raw = true` 的字段。
+
+工具级两个开关（踩过坑才有）：
+`ok_codes = [0, 64]` = 哪些退出码算成功（ysoserial 列链返 64、fenjing 没打到返 1，别让页面标成"失败"）；
+`strip_proxy = true` = 丢掉环境里的 `http(s)/all_proxy`（python 系工具遇到 socks 代理会直接 `ImportError: socksio`，这类工具请用表单里的 `--proxy`）。
 完整 schema 见 `tools.toml` 文件头的注释。
 
 ## 目录

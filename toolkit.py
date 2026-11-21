@@ -91,13 +91,15 @@ def wordlists() -> list[dict]:
 # ───────────────────────────── 运行管理 ─────────────────────────────
 
 class Run:
-    def __init__(self, tool_id: str, title: str, cmdline: str, argv: list[str], cwd: str):
+    def __init__(self, tool_id: str, title: str, cmdline: str, argv: list[str], cwd: str,
+                 ok_codes: tuple[int, ...] = (0,)):
         self.id = uuid.uuid4().hex[:12]
         self.tool_id = tool_id
         self.title = title
         self.cmdline = cmdline
         self.argv = argv
         self.cwd = cwd
+        self.ok_codes = ok_codes        # 有些工具用非 0 退出码表示"正常"（ysoserial 列链 = 64）
         self.status = "running"          # running / done / failed / killed
         self.rc: int | None = None
         self.started = time.time()
@@ -247,11 +249,24 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
     if not cwd_p.is_dir():
         raise ValueError(f"工作目录不存在: {cwd_p}")
 
-    run = Run(tool["id"], tool["name"], pretty, argv, str(cwd_p))
+    ok = tuple(tool.get("ok_codes", (0,)))
+    run = Run(tool["id"], tool["name"], pretty, argv, str(cwd_p), ok)
     env = os.environ.copy()
     env["PATH"] = f"{HOME / '.local/bin'}:{env.get('PATH', '/usr/bin:/bin')}"
     env["PYTHONUNBUFFERED"] = "1"
     env.setdefault("TERM", "dumb")
+
+    if tool.get("strip_proxy"):
+        # 环境里的 socks 代理会让内置 httpx/requests 直接 ImportError（缺 socksio），
+        # 这类工具自己有 --proxy 字段，宁可让它不带代理跑
+        for k in ("http_proxy", "https_proxy", "all_proxy", "ftp_proxy",
+                  "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY"):
+            env.pop(k, None)
+    else:
+        # 从桌面启动时环境里没有代理变量，按配置补一个（工具要出网时靠它）
+        p = CFG.get("app", {}).get("proxy_env", "")
+        if p and not any(env.get(k) for k in ("http_proxy", "HTTP_PROXY")):
+            env["http_proxy"] = env["https_proxy"] = env["HTTP_PROXY"] = env["HTTPS_PROXY"] = p
 
     try:
         run.proc = subprocess.Popen(
@@ -277,7 +292,7 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
         rc = run.proc.wait()
         run.rc = rc
         run.ended = time.time()
-        run.status = "done" if rc == 0 else ("killed" if rc < 0 else "failed")
+        run.status = ("done" if rc in run.ok_codes else "killed" if rc < 0 else "failed")
         run.add(f"\n[退出码 {rc}] {run.status} · 耗时 {run.elapsed:.1f}s")
         append_history(run.meta() | {"cmdline": run.cmdline, "cwd": run.cwd})
         trim_runs()
