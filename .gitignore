@@ -1,0 +1,7 @@
+# 外部资源：用 scripts/fetch-vendor.sh 重新拉取
+/vendor/
+/wordlists/*.txt
+
+__pycache__/
+*.pyc
+/.hg/

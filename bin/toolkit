@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# toolkit —— 启动 ctf-toolkit 的本地 Web 界面
+# 用法: toolkit [--port 8787] [--no-browser]
+set -euo pipefail
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+root="$(dirname "$(dirname "$self")")"
+exec python3 "$root/toolkit.py" "$@"

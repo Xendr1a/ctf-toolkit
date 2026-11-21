@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CTF Toolkit</title>
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand"><span class="dot"></span><b id="title">CTF Toolkit</b></div>
+    <label class="field inline">
+      <span>目标</span>
+      <input id="target" placeholder="http://target:8080  —— 会替换所有 {{TARGET}}" spellcheck="false">
+    </label>
+    <label class="field inline wide">
+      <span>工作目录</span>
+      <input id="cwd" spellcheck="false">
+    </label>
+    <div class="hdr-right">
+      <span id="running" class="pill hidden">● 运行中</span>
+    </div>
+  </header>
+
+  <aside>
+    <input id="search" placeholder="搜索工具…" spellcheck="false">
+    <nav id="nav"></nav>
+    <div class="side-foot">
+      <button id="histBtn" class="ghost sm">历史记录</button>
+    </div>
+  </aside>
+
+  <main>
+    <section id="toolHead">
+      <h1 id="tName">选择一个工具</h1>
+      <p id="tDesc" class="muted"></p>
+    </section>
+
+    <section id="formWrap"></section>
+
+    <section id="extraWrap">
+      <div class="fld">
+        <label><span class="fl">附加参数</span><span>预设会填进这里，可自由改</span></label>
+        <textarea id="extra" rows="2" placeholder="--batch -v -o out.txt" spellcheck="false"></textarea>
+      </div>
+    </section>
+
+    <section id="runbar">
+      <button id="runBtn" class="primary">▶ 运行</button>
+      <button id="stopBtn" class="danger" disabled>■ 停止</button>
+      <button id="copyBtn" class="ghost">复制命令</button>
+      <button id="exportBtn" class="ghost">导出到 evidence</button>
+      <label class="toggle"><input type="checkbox" id="follow" checked> 自动滚动</label>
+      <span id="stat" class="muted"></span>
+    </section>
+
+    <section id="cmdline" class="cmdline muted" title="点击复制"></section>
+
+    <section id="outwrap">
+      <pre id="out"></pre>
+    </section>
+  </main>
+</div>
+<div id="history" class="drawer hidden">
+  <div class="drawer-hd"><b>历史记录</b><button class="ghost sm" id="histClose">关闭</button></div>
+  <div id="histList"></div>
+</div>
+<script src="/web/app.js"></script>
+</body>
+</html>
