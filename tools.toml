@@ -304,7 +304,7 @@ category = "vuln"
 icon = "🔑"
 desc = "JWT 检测与攻击：alg=none、弱密钥爆破、kid 注入、伪造字段"
 notes = "先 -t/-rc 让它抓到 token 再 -M 各种模式；有 token 可直接贴第一个框\n-M at 扫全套；-X a 试 alg=none；-C -d 爆破密钥"
-cmd = ["/home/xendr1a/ctf/.venv/bin/python", "/home/xendr1a/ctf/tools/jwt_tool/jwt_tool.py"]
+cmd = ["jwt"]        # ~/.local/bin/jwt = $HOME/opt/webvenv/bin/python $HOME/opt/jwt_tool/jwt_tool.py
 fields = [
   { flag = "", label = "Token", kind = "textarea", ph = "eyJhbGciOi...", hint = "留空则靠 -t/-rc 自动抓" },
   { flag = "-t", label = "目标 URL", kind = "text", ph = "{{TARGET}}", tgt = true },
@@ -451,3 +451,49 @@ view = "iframe"
 url = "/vendor/cyberchef/index.html"
 fields = []
 presets = []
+
+# ── 追加：网页爬取 / 历史 URL（都是 web 方向，加新工具照抄这两段就行）───────────
+[[tool]]
+id = "katana"
+name = "katana"
+category = "recon"
+icon = "🕸️"
+desc = "爬虫：把站点跑一遍，吐出所有 URL/表单/JS 接口"
+notes = "-silent 只输出 URL（已默认）；-jc 解析 JS 文件里的接口；-kf all 抓常见文件\n爬出来的 URL 直接丢给 ffuf/nuclei/dalfox 当目标列表"
+cmd = ["katana"]
+fields = [
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-d", label = "爬取深度", kind = "number", default = "3" },
+  { flag = "-jc", label = "-jc 解析 JS", kind = "bool" },
+  { flag = "-kf", label = "抓已知文件", kind = "select", options = ["", "all", "robotstxt", "sitemapxml"] },
+  { flag = "-timeout", label = "单请求超时(秒)", kind = "number", default = "10" },
+  { flag = "-rl", label = "限速/秒", kind = "number", ph = "50" },
+  { flag = "-H", label = "请求头", kind = "textarea", repeat = true, ph = "Cookie: a=1" },
+  { flag = "-proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+  { flag = "-o", label = "输出文件", kind = "text", ph = "urls.txt" },
+  { flag = "-silent", label = "-silent 只输出 URL", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "快速爬取", args = "", set = { "-d" = "2" } },
+  { label = "深爬 + JS 接口", args = "", set = { "-d" = "5", "-jc" = "1", "-kf" = "all" } },
+  { label = "存成 urls.txt", args = "", set = { "-o" = "urls.txt" } },
+]
+
+[[tool]]
+id = "waybackurls"
+name = "waybackurls"
+category = "recon"
+icon = "🕰️"
+desc = "历史 URL 收集：从 Wayback 捞已下线/备份的接口与参数"
+notes = "它从标准输入读域名，所以这里用 shell 管道喂进去（这就是 mode = \"shell\" 的用途）\n捞到的老接口常是未修补的入口，粘到 curl/ffuf 里挨个试"
+mode = "shell"
+cmd = ["bash", "-lc"]
+fields = [
+  { flag = "", label = "命令（可改）", kind = "textarea", raw = true, req = true, ph = "echo example.com | waybackurls", default = "echo {{TARGET}} | waybackurls" },
+]
+presets = [
+  { label = "默认（含子域）", args = "", set = { "0" = "echo {{TARGET}} | waybackurls" } },
+  { label = "只看主域", args = "", set = { "0" = "echo {{TARGET}} | waybackurls -no-subs" } },
+  { label = "带抓取日期", args = "", set = { "0" = "echo {{TARGET}} | waybackurls -dates" } },
+  { label = "取前 50 条试试", args = "", set = { "0" = "echo {{TARGET}} | waybackurls | head -50" } },
+]

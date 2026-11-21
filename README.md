@@ -4,7 +4,7 @@
 左栏点工具 → 表单填参数 → 「▶ 运行」→ 输出实时流回页面。不用记 flag，命令行可以一键复制回终端。
 
 - 纯本地：只监听 `127.0.0.1`，无第三方依赖（Python 标准库 + `tomllib`）
-- 19 个工具 / 4 个分类，每个都带**预设**（列库、拖表、目录爆破、JWT 攻击、SSTI、PHP gadget…）
+- 21 个工具 / 4 个分类，专注 Web；每个都带**预设**（列库、拖表、目录爆破、JWT 攻击、SSTI、PHP gadget、爬站…）
 - 顶部「目标」框自动填主字段（`{{TARGET}}` 占位符）
 - 输出实时流式显示，可停止、可导出到 `~/ctf/evidence/`
 - 历史记录（近 300 次），点一条即可回看输出
@@ -51,6 +51,7 @@ python3 selftest/smoke.py --keep                # 跑完不关靶站，方便自
 | 分类 | 工具 | 定位 |
 |---|---|---|
 | 探测 | `curl` `whatweb` `httpx` `nmap` | 手工请求、指纹、存活探测、端口 |
+| 探测 | `katana` `waybackurls` | 爬站收集 URL / 从 Wayback 捞历史接口 |
 | 爆破 | `ffuf` `dirsearch` `gobuster` | 目录/子域/参数 |
 | 漏洞利用 | `sqlmap` `nuclei` `dalfox` | SQLi、模板扫描、XSS |
 | 漏洞利用 | `fenjing` | SSTI（直接打或用 payload 模式） |
@@ -59,12 +60,14 @@ python3 selftest/smoke.py --keep                # 跑完不关靶站，方便自
 
 工具本体不搬家，注册表只记「怎么调」：
 
-- `cmd = [...]` 绝对命令（可以是 `php .../phpggc`、`java -jar ...`、`~/ctf/.venv/bin/python ...`）
+- `cmd = [...]` 绝对命令（可以是 `php .../phpggc`、`java --add-opens ... -jar ...`、`jwt` 这种包装脚本）
 - `mode = "shell"` 时把表单内容拼成一行交给 `bash -lc`，适合管道/重定向
 - 字段 `tgt = true` 表示「顶部目标框留空时自动填这个字段」；占位符里的 `{{TARGET}}` 会被替换，无占位符则取主机名
-- `presets` 只是往「附加参数」里塞字符串，塞完还能改，不藏魔法
+- `presets` = 先重置表单 → 用 `set` 填字段（键可用序号/flag/标签）→ `args` 进「附加参数」，仍可手改，不藏魔法
 
-### 加一个新工具
+### 加一个 Web 工具（3 步，不用改代码）
+
+1. 在 `tools.toml` 末尾粘一段（照抄现成条目最省事）：
 
 ```toml
 [[tool]]
@@ -83,7 +86,18 @@ fields = [
 presets = [ { label = "常规扫描", args = "-h {{TARGET}} -Tuning 123b" } ]
 ```
 
-存盘 → 刷新页面即生效（服务端每次 `/api/state` 都重读 `tools.toml`）。
+2. **校验语法**（Inline table 必须在一行内，这是最容易踩的）：
+
+```bash
+python3 -c "import tomllib;d=tomllib.load(open('tools.toml','rb'));print(len(d['tool']),'tools ok')"
+```
+
+3. **刷新页面**就多一个工具（服务端按 mtime 热重载，不用重启）；填个目标点运行，看输出对不对。
+
+字段速查：`kind` 支持 `text` / `textarea` / `select`(`options`)/ `bool`(`default="1"` 勾上)/ `combo`
+(`options_from="wordlists"` 出字典下拉)/ `number`；`flag` 留空 = 位置参数；`repeat = true` = 一行一个参数；
+`tgt = true` = 顶部目标自动填（一个工具只标一个）；要跑管道就 `mode = "shell"` + 一个 `raw = true` 的字段。
+完整 schema 见 `tools.toml` 文件头的注释。
 
 ## 目录
 
