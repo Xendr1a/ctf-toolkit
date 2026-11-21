@@ -38,11 +38,12 @@ toolkit --no-browser    # 只起服务
 ln -sf "$PWD/bin/toolkit" ~/.local/bin/toolkit
 ```
 
-自测（会自己起一个本地 PHP 靶站，把 curl / whatweb / ffuf / sqlmap / phpggc / shell 六条链路真跑一遍）：
+自测（两套，跑完都绿就说明基础链路没坏）：
 
 ```bash
-python3 selftest/smoke.py          # 6/6 通过 === 一切正常
-python3 selftest/smoke.py --keep   # 跑完不关靶站，方便自己点着玩
+python3 -m unittest discover -s selftest -t .   # 16 个纯函数单测：拼命令/目标替换/字典路径/run 淘汰
+python3 selftest/smoke.py                       # 6/6 通过 === 端到端链路都通
+python3 selftest/smoke.py --keep                # 跑完不关靶站，方便自己点着玩
 ```
 
 ## 工具清单（`tools.toml`）
@@ -105,5 +106,19 @@ bin/toolkit       # 启动器
 - **nmap 没 root**：宿主机匿名用户无 `CAP_NET_RAW`，`-sS/-sU/-O` 会失败，注册表默认 `-sT`；要 SYN 扫描用 `ctfbox nmap -sS`（容器内是 root）。
 - **httpx 是 ProjectDiscovery 版**（`-u` 不是 `curl`），别和 Python 的 httpx 混淆。
 - **jwt_tool 用 `~/ctf/.venv/bin/python` 跑**（宿主 python 缺 `ratelimit`）；ysoserial 已自带 `--add-opens`，JDK 27 上能跑。
-- **安全**：服务只绑 `127.0.0.1`；所有 POST 要求 `X-Requested-By: toolkit` 头并校验 `Origin`，防别的网页跨域打你本地端口执行命令。别把它绑到 `0.0.0.0`。
-- 只能打授权目标。比赛平台本身不在范围内（这条是用户明确要求）。
+- **安全**：服务只绑 `127.0.0.1`（绑定其他地址会被直接拒绝，除非显式 `--allow-remote`）；所有 POST 要求
+  `X-Requested-By: toolkit` 头并校验 `Origin`，防别的网页跨域打你本地端口执行命令。别把它对外暴露。
+- **只能打授权目标**。比赛平台本身不在范围内（这条是用户明确要求）。
+- **热重载**：`tools.toml` 存盘即生效（服务端按 mtime 重读）；改坏了会打一条 warn 并继续用旧配置，不会把服务打挂。
+- **状态清理**：运行日志保留最近 200 个（启动时清理），`history.jsonl` 超 400 条自动裁剪到 300；
+  内存里最多留 40 个 run（更老的丢内存，磁盘日志按保留策略走）。
+
+## 已知限制 / 还能优化的
+
+| 优先 | 事项 | 现状 |
+|---|---|---|
+| P1 | pwn/逆向/取证 没上界面 | gdb、checksec、binwalk、exiftool、hashcat 只能走「自由命令」，加进 `tools.toml` 即可做成表单 |
+| P1 | 只能盯一个任务 | 开新任务会放弃旧任务的实时视图（日志仍在，历史里能回放）；要并行得开两个浏览器标签（服务端本来支持并发） |
+| P2 | 无鉴权 | 只靠回环 + 自定义头；同一台机器上任何本地进程都能调 API |
+| P2 | 输出只留在本地 | 没有把命中结果自动汇总成 writeup 片段；导出是原始日志 |
+| P3 | 无 worker 复用 | 每个工具都是裸进程；要跑批量目标（多 URL）得自己写循环或用「自由命令」 |

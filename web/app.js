@@ -2,7 +2,7 @@
 const S = {
   tools: [], cats: {}, wordlists: [], sel: null, filter: '',
   runId: null, next: 0, polling: false,
-  target: '', hist: [], chefFrame: null, lines: [], dropped: 0, worddir: '',
+  target: '', hist: [], chefFrame: null, lines: [], dropped: 0, worddir: '', idle: 0,
 };
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -251,12 +251,12 @@ function splitArgs(s) {
 
 /* ───────────── 运行 ───────────── */
 async function run() {
-  if (S.polling) return;
+  if (S.polling && !confirm('当前任务还在跑：开新任务会丢掉它的实时视图（日志仍会保存）。继续？')) return;
   const t = S.tools.find(x => x.id === S.sel);
   if (!t || t.view === 'iframe') return;
   const body = { tool: S.sel, values: values(), extra: ($('extra') ? $('extra').value : ''), target: S.target, cwd: $('cwd').value.trim() };
   $('out').innerHTML = ''; $('stat').textContent = '';
-  S.lines = []; S.dropped = 0;
+  S.lines = []; S.dropped = 0; S.idle = 0;
   try {
     const r = await api('/api/run', { method: 'POST', body: JSON.stringify(body) });
     S.runId = r.id; S.next = 0; S.polling = true;
@@ -275,8 +275,10 @@ async function poll() {
     const r = await api('/api/poll?id=' + S.runId + '&from=' + S.next);
     S.next = r.next;
     appendLines(r.lines);
+    // 长时间没新输出就退避（sqlmap/nuclei 会静默很久），有输出立刻恢复快轮询
+    S.idle = r.lines.length ? 0 : (S.idle || 0) + 1;
     $('stat').textContent = `${r.status} · ${r.elapsed}s`;
-    if (r.status === 'running') { setTimeout(poll, 280); return; }
+    if (r.status === 'running') { setTimeout(poll, S.idle > 8 ? 1200 : 280); return; }
     finish(r.status, r.rc, r.elapsed);
   } catch (e) {
     appendLine('✗ 轮询失败: ' + e.message, true);

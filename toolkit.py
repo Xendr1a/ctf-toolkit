@@ -188,9 +188,9 @@ def build(tool: dict, values: list, extra: str, target: str) -> tuple[list[str],
         raw = values[i] if i < len(values) else f.get("default", "")
         if f.get("tgt") and not str(raw or "").strip() and target:
             raw = tgt_value(f, target)      # 顶部目标框自动填主字段
-        if f["kind"] == "bool":
+        if f.get("kind") == "bool":
             if raw in (True, "1", "true", "on", 1):
-                if f["flag"]:
+                if f.get("flag"):
                     args.append(f["flag"])
             continue
         if isinstance(raw, bool):
@@ -198,17 +198,17 @@ def build(tool: dict, values: list, extra: str, target: str) -> tuple[list[str],
         val = subst(str(raw or ""), target).strip("\n")
         if not val.strip():
             continue
-        if f["repeat"]:
+        if f.get("repeat"):
             for ln in val.splitlines():
                 ln = ln.strip()
                 if not ln:
                     continue
-                if f["flag"]:
+                if f.get("flag"):
                     args += [f["flag"], ln]
                 else:
                     args.append(ln)
             continue
-        if f["flag"]:
+        if f.get("flag"):
             args += [f["flag"], val]
         else:
             args.append(val)
@@ -280,6 +280,7 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
         run.status = "done" if rc == 0 else ("killed" if rc < 0 else "failed")
         run.add(f"\n[退出码 {rc}] {run.status} · 耗时 {run.elapsed:.1f}s")
         append_history(run.meta() | {"cmdline": run.cmdline, "cwd": run.cwd})
+        trim_runs()
 
     threading.Thread(target=pump, daemon=True).start()
     return run
@@ -344,14 +345,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.static(ROOT / path.lstrip("/"))
 
         if path == "/api/state":
+            cfg = reload_config()
             return self.j({
-                "app": {"title": CFG["app"].get("title", "CTF Toolkit"),
+                "app": {"title": cfg["app"].get("title", "CTF Toolkit"),
                         "port": PORT, "uptime": round(time.time() - START, 1)},
                 "categories": CATEGORIES,
-                "tools": CFG["tool"],
+                "tools": cfg["tool"],
                 "wordlists": wordlists(),
                 "wordlists_dir": str(ROOT / "wordlists"),
-                "workdir_default": CFG["app"].get("workdir_default", "~/ctf/evidence"),
+                "workdir_default": cfg["app"].get("workdir_default", "~/ctf/evidence"),
                 "workdir_cwd": os.getcwd(),
                 "history": HISTORY[-60:],
             })
@@ -386,14 +388,16 @@ class Handler(BaseHTTPRequestHandler):
         d = self.body()
 
         if path == "/api/run":
-            tool = next((t for t in CFG["tool"] if t["id"] == d.get("tool")), None)
+            cfg = reload_config()
+            tool = next((t for t in cfg["tool"] if t["id"] == d.get("tool")), None)
             if not tool:
                 return self.j({"error": "未知工具"}, 400)
             try:
                 run = spawn(tool, d.get("values") or [], d.get("extra") or "",
-                            d.get("target") or "", d.get("cwd") or CFG["app"].get("workdir_default", "~"))
+                            d.get("target") or "", d.get("cwd") or cfg["app"].get("workdir_default", "~"))
             except ValueError as e:
                 return self.j({"error": str(e)}, 400)
+            trim_runs()
             return self.j({"id": run.id, "cmdline": run.cmdline, "cwd": run.cwd})
 
         if path == "/api/stop":
@@ -452,20 +456,76 @@ class Handler(BaseHTTPRequestHandler):
 
 
 CFG: dict = {}
+CFG_MTIME: float = 0.0
 PORT = 8787
+MAX_RUNS = 40              # 内存里最多留多少个 run（更老的从 RUNS 里丢掉，磁盘日志还在）
+KEEP_LOGS = 200            # 启动时保留最近多少个日志文件
+
+
+def reload_config() -> dict:
+    """tools.toml 改了就直接生效：按 mtime 判断，解析失败继续用旧配置不把服务打挂。"""
+    global CFG, CFG_MTIME
+    p = ROOT / "tools.toml"
+    try:
+        m = p.stat().st_mtime
+    except OSError:
+        return CFG
+    if m != CFG_MTIME:
+        try:
+            CFG = load_config()
+            CFG_MTIME = m
+        except Exception as e:                     # noqa: BLE001 - 配置坏了不能让服务挂
+            sys.stderr.write(f"[warn] tools.toml 解析失败，继续用旧配置: {e}\n")
+    return CFG
+
+
+def trim_runs():
+    """只保留最近的 MAX_RUNS 个 run 在内存里，避免长会话内存一路涨。"""
+    if len(RUNS) <= MAX_RUNS:
+        return
+    finished = sorted((r for r in RUNS.values() if r.status != "running"),
+                      key=lambda r: r.started)
+    for r in finished[:len(RUNS) - MAX_RUNS]:
+        RUNS.pop(r.id, None)
+
+
+def prune_state():
+    """清理历史日志与 history.jsonl，防止无限增长。"""
+    logs = sorted(LOGS.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    for p in logs[KEEP_LOGS:]:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+    if len(HISTORY) > 400:
+        del HISTORY[:-300]
+        try:
+            HISTORY_FILE.write_text(
+                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in HISTORY))
+        except OSError:
+            pass
 
 
 def main() -> int:
-    global CFG, PORT
+    global CFG, CFG_MTIME, PORT
     ap = argparse.ArgumentParser(description="CTF Toolkit 本地 Web 界面")
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--no-browser", action="store_true")
-    ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--host", default="127.0.0.1", help="只允许回环地址；对外暴露需再加 --allow-remote")
+    ap.add_argument("--allow-remote", action="store_true", help="允许绑定非回环地址（危险）")
     a = ap.parse_args()
 
     CFG = load_config()
+    CFG_MTIME = (ROOT / "tools.toml").stat().st_mtime
     PORT = a.port or int(CFG["app"].get("port", 8787))
     load_history()
+    prune_state()
+
+    if a.host not in ("127.0.0.1", "localhost", "::1"):
+        if not a.allow_remote:
+            print(f"拒绝绑定 {a.host}：这个界面能在本机执行任意命令，只允许回环地址。\n"
+                  f"确实要对外暴露，加 --allow-remote（风险自负）。", file=sys.stderr)
+            return 2
 
     httpd = ThreadingHTTPServer((a.host, PORT), Handler)
     httpd.daemon_threads = True
