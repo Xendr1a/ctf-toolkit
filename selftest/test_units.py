@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 import importlib.util
+import http.client
 import json
 import re
 import select
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 import urllib.request
@@ -21,6 +24,35 @@ spec = importlib.util.spec_from_file_location("tk", ROOT / "toolkit.py")
 tk = importlib.util.module_from_spec(spec)
 sys.modules["tk"] = tk
 spec.loader.exec_module(tk)
+
+
+def _start_backend():
+    """起后端（--port 0），从 stdout 读真实端口。失败时抛 RuntimeError。"""
+    proc = subprocess.Popen(
+        [sys.executable, str(ROOT / "toolkit.py"), "--no-browser", "--port", "0"],
+        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    ready, _, _ = select.select([proc.stdout], [], [], 3)
+    if not ready:
+        _stop_backend(proc)
+        raise RuntimeError("后端启动超时")
+    line = proc.stdout.readline()
+    match = re.search(r"http://127\.0\.0\.1:(\d+)/", line)
+    if not match:
+        _stop_backend(proc)
+        raise RuntimeError(f"启动输出缺少 URL: {line!r}")
+    return proc, int(match.group(1))
+
+
+def _stop_backend(proc):
+    proc.terminate()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+    proc.stdout.close()
+    proc.stderr.close()
 
 
 def tool(fields, cmd=("echo",), mode="argv"):
@@ -148,34 +180,51 @@ class ConfigTest(unittest.TestCase):
 
 class DesktopBackendTest(unittest.TestCase):
     def test_dynamic_port_handshake_and_sigterm(self):
-        proc = subprocess.Popen(
-            [sys.executable, str(ROOT / "toolkit.py"), "--no-browser", "--port", "0"],
-            cwd=ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        proc, port = _start_backend()
         try:
-            ready, _, _ = select.select([proc.stdout], [], [], 3)
-            self.assertTrue(ready, "后端端口被 stdout 缓冲，桌面壳无法完成启动握手")
-            line = proc.stdout.readline()
-            match = re.search(r"http://127\.0\.0\.1:(\d+)/", line)
-            self.assertIsNotNone(match, f"启动输出缺少 URL: {line!r}")
-            port = int(match.group(1))
             self.assertNotEqual(port, 0)
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=2) as response:
                 state = json.load(response)
             self.assertIn("tools", state)
         finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-            proc.stdout.close()
-            proc.stderr.close()
+            _stop_backend(proc)
         self.assertEqual(proc.returncode, 0)
+
+
+class StaticPathTest(unittest.TestCase):
+    def test_static_blocks_symlink_escape(self):
+        """web/ 里的符号链接指向仓库外文件，必须返回 403 而不是把内容吐出去。"""
+        outside = Path(tempfile.mkdtemp(prefix="tk_outside_"))
+        secret = "TOOLKIT_TEST_SECRET_MARKER"
+        (outside / "secret.txt").write_text(secret, encoding="utf-8")
+        link = ROOT / "web" / f"link_{time.time_ns()}.txt"
+        link.symlink_to(outside / "secret.txt")
+        proc = None
+        try:
+            proc, port = _start_backend()
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+            conn.request("GET", "/web/" + link.name)
+            resp = conn.getresponse()
+            body = resp.read().decode("utf-8", "replace")
+            conn.close()
+            self.assertEqual(resp.status, 403, f"符号链接逃逸应被拒，实际 {resp.status}")
+            self.assertNotIn(secret, body)
+        finally:
+            if proc is not None:
+                _stop_backend(proc)
+            link.unlink(missing_ok=True)
+            shutil.rmtree(outside, ignore_errors=True)
+
+    def test_static_blocks_prefix_sibling(self):
+        """同级的「前缀混淆」目录（名字是 ROOT 名字加后缀）不能被 startswith 误放行。"""
+        h = tk.Handler.__new__(tk.Handler)
+        h.command = "GET"
+        calls = {}
+        h.j = lambda obj, code=200: calls.setdefault("code", code)
+        h._send = lambda *a, **k: calls.setdefault("send", True)
+        evil = f"{Path(ROOT).name}_evil/secret.txt"
+        h.static(Path(ROOT) / "web/../../" / evil)
+        self.assertEqual(calls.get("code"), 403, "前缀混淆路径应返回 403")
 
 
 if __name__ == "__main__":

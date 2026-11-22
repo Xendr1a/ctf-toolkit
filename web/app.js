@@ -139,18 +139,23 @@ function applyPreset(t, p) {
 function applyTarget() {
   const t = S.tools.find(x => x.id === S.sel);
   if (!t || t.view === 'iframe') return;
+  const tgs = targetsList();
   t.fields.forEach((f, i) => {
     if (!f.tgt) return;
     const inp = $('formWrap').querySelector('[data-idx="' + i + '"]');
     if (!inp || inp.type === 'checkbox') return;
+    if (tgs.length !== 1) {                 // 0 个或多个目标：清空，交给后端按目标逐个填
+      inp.value = ''; inp.dataset.auto = '';
+      return;
+    }
     const auto = inp.dataset.auto === '1';
-    if (!auto && inp.value !== '') return;      // 用户手填过就不动
-    if (!S.target) { inp.value = ''; inp.dataset.auto = ''; return; }
+    if (!auto && inp.value !== '') return;  // 用户手填过就不动
+    const tg = tgs[0];
     const ph = f.ph || '{{TARGET}}';
-    if (ph.includes('{{TARGET}}')) inp.value = ph.replaceAll('{{TARGET}}', S.target);
+    if (ph.includes('{{TARGET}}')) inp.value = ph.replaceAll('{{TARGET}}', tg);
     else {
-      try { inp.value = new URL(S.target.includes('//') ? S.target : '//' + S.target).hostname; }
-      catch { inp.value = S.target; }
+      try { inp.value = new URL(tg.includes('//') ? tg : '//' + tg).hostname; }
+      catch { inp.value = tg; }
     }
     inp.dataset.auto = '1';
   });
@@ -214,15 +219,30 @@ function values() {
 }
 
 /* 与后端 build() 等价的本地预览 */
+function targetsList() {
+  return [...new Set((S.target || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean))];
+}
 function subst(s) {
-  if (!S.target) return s;
-  return String(s).replaceAll('{{TARGET}}', S.target);
+  const tg = targetsList()[0];          // 多目标时预览只看第一个
+  if (!tg) return s;
+  return String(s).replaceAll('{{TARGET}}', tg);
 }
 function quote(a) { return /[^\w@%+=:,./\u4e00-\u9fa5-]/.test(a) ? "'" + a.replaceAll("'", "'\\''") + "'" : a; }
 function preview() {
   const t = S.tools.find(x => x.id === S.sel);
   if (!t || t.view === 'iframe') return;
   const vals = values();
+  const first = targetsList()[0] || '';
+  // tgt 字段在多目标时是空的，本地预览按第一个目标补齐，和后端 tgt_value 一致
+  t.fields.forEach((f, i) => {
+    if (!f.tgt || !first || (vals[i] || '').trim()) return;
+    const ph = f.ph || '{{TARGET}}';
+    if (ph.includes('{{TARGET}}')) vals[i] = ph.replaceAll('{{TARGET}}', first);
+    else {
+      try { vals[i] = new URL(first.includes('//') ? first : '//' + first).hostname; }
+      catch { vals[i] = first; }
+    }
+  });
   const args = [];
   t.fields.forEach((f, i) => {
     const raw = vals[i] ?? '';
@@ -255,6 +275,7 @@ function splitArgs(s) {
 /* ───────────── 运行（多任务标签，各自独立轮询/缓冲） ───────────── */
 const OUT_KEEP = 4000;   // 每个任务在页面里最多保留多少行（超出只丢渲染，不影响磁盘日志）
 const MAX_TABS = 12;     // 标签软上限：超出先关最旧的已结束标签；全在跑就暂超，不强杀
+const view = { id: null, rendered: 0, dropped: 0 };   // <pre> 当前渲染的是哪个 run、已渲染几行
 
 const activeRun = () => S.runs.get(S.active) || null;
 const isChef = () => { const t = S.tools.find(x => x.id === S.sel); return !!t && t.view === 'iframe'; };
@@ -262,21 +283,27 @@ const isChef = () => { const t = S.tools.find(x => x.id === S.sel); return !!t &
 async function run() {
   const t = S.tools.find(x => x.id === S.sel);
   if (!t || t.view === 'iframe') return;
-  const body = { tool: S.sel, values: values(), extra: ($('extra') ? $('extra').value : ''), target: S.target, cwd: $('cwd').value.trim() };
+  const tgs = targetsList();
+  const targets = tgs.length ? tgs : [''];   // 没填目标也允许空跑一次
+  const cwd = $('cwd').value.trim();
+  const extra = $('extra') ? $('extra').value : '';
+  const vals = values();                       // tgt 字段在多目标时为空，由后端按每个目标填
   $('runBtn').disabled = true;
-  let resp;
-  try {
-    resp = await api('/api/run', { method: 'POST', body: JSON.stringify(body) });
-  } catch (e) {
-    $('runBtn').disabled = false;
-    $('stat').textContent = '✗ ' + e.message;
-    return;
+  let started = 0;
+  for (const tg of targets) {
+    try {
+      const resp = await api('/api/run', { method: 'POST', body: JSON.stringify({ tool: S.sel, values: vals, extra, target: tg, cwd }) });
+      const r = { id: resp.id, toolId: t.id, icon: t.icon || '🧰', name: t.name, cmdline: resp.cmdline,
+                  lines: [], dropped: 0, next: 0, idle: 0, status: 'running', rc: null, elapsed: 0, replay: false };
+      addTab(r);
+      poll(r);
+      started++;
+    } catch (e) {
+      $('stat').textContent = '✗ ' + (tg ? tg + '：' : '') + e.message;
+    }
   }
   $('runBtn').disabled = false;
-  const r = { id: resp.id, toolId: t.id, icon: t.icon || '🧰', name: t.name, cmdline: resp.cmdline,
-              lines: [], dropped: 0, next: 0, idle: 0, status: 'running', rc: null, elapsed: 0, replay: false };
-  addTab(r);
-  poll(r);
+  if (started > 1) $('stat').textContent = `已启动 ${started} 个任务`;
 }
 
 function addTab(r) {
@@ -332,6 +359,7 @@ function closeTab(id) {
     else {
       S.active = null;
       $('out').textContent = ''; $('stat').textContent = ''; $('stopBtn').disabled = true;
+      view.id = null; view.rendered = 0; view.dropped = 0;
       preview();
     }
   }
@@ -380,16 +408,33 @@ function updatePill() {
 
 function pushLines(r, arr) {
   if (!arr || !arr.length) return;
+  const before = r.dropped;
   for (const l of arr) r.lines.push(l);
   if (r.lines.length > OUT_KEEP) {
     r.dropped += r.lines.length - OUT_KEEP;
     r.lines = r.lines.slice(-OUT_KEEP);
   }
-  if (r.id === S.active) renderOut(r);
+  if (r.id !== S.active) return;
+  if (r.dropped !== before) renderOut(r);   // 开头被裁剪，整段重画（note 也变了）
+  else appendOut(r);
 }
 
 function renderOut(r) {
-  $('out').textContent = (r.dropped ? `… 前面 ${r.dropped} 行未显示（完整日志见导出文件）…\n` : '') + r.lines.join('\n');
+  const pre = $('out');
+  const note = r.dropped ? `… 前面 ${r.dropped} 行未显示（完整日志见导出文件）…\n` : '';
+  pre.replaceChildren(document.createTextNode(note + r.lines.join('\n')));
+  view.id = r.id; view.rendered = r.lines.length; view.dropped = r.dropped;
+  if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
+}
+
+/* 只在尾部追加新行，不重写整段，避免大输出下每 280ms 全量重绘导致卡顿 */
+function appendOut(r) {
+  if (view.id !== r.id) return renderOut(r);   // 切换过标签等异常情况，退回全量
+  const pre = $('out');
+  const fresh = r.lines.slice(view.rendered);
+  if (!fresh.length) return;
+  pre.appendChild(document.createTextNode((view.rendered ? '\n' : '') + fresh.join('\n')));
+  view.rendered = r.lines.length;
   if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
 }
 

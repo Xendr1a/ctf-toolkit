@@ -5,7 +5,7 @@
 
 - 纯本地：只监听 `127.0.0.1`；浏览器模式零依赖（Python 标准库 + `tomllib`），桌面模式用系统 webview（webkit2gtk）
 - 21 个工具 / 4 个分类，专注 Web；每个都带**预设**（列库、拖表、目录爆破、JWT 攻击、SSTI、PHP gadget、爬站…）
-- 顶部「目标」框自动填主字段（`{{TARGET}}` 占位符）
+- 顶部「目标」框自动填主字段（`{{TARGET}}` 占位符）；逗号/换行分隔可一次打多个目标
 - 输出实时流式显示，可停止、可导出到 `~/ctf/evidence/`
 - 历史记录（近 300 次），点一条即可回看输出
 - 多任务并行：每次运行开一个标签页，各自独立实时流；切标签回看，关运行中标签 = 停止它；历史回放也开标签
@@ -55,7 +55,7 @@ ln -sf "$PWD/bin/toolkit" ~/.local/bin/toolkit
 自测（两套，跑完都绿就说明基础链路没坏）：
 
 ```bash
-python3 -m unittest discover -s selftest -t .   # 17 个单测：拼命令/目标替换/字典路径/run 淘汰/桌面握手
+python3 -m unittest discover -s selftest -t .   # 19 个单测：拼命令/目标替换/字典路径/run 淘汰/桌面握手/路径安全
 python3 selftest/smoke.py                       # 6/6 通过 === 端到端链路都通
 python3 selftest/smoke.py --keep                # 跑完不关靶站，方便自己点着玩
 ```
@@ -156,4 +156,4 @@ bin/toolkit       # 启动器
 | P1 | pwn/逆向/取证 没上界面 | gdb、checksec、binwalk、exiftool、hashcat 只能走「自由命令」，加进 `tools.toml` 即可做成表单 |
 | P2 | 无鉴权 | 只靠回环 + 自定义头；同一台机器上任何本地进程都能调 API |
 | P2 | 输出只留在本地 | 没有把命中结果自动汇总成 writeup 片段；导出是原始日志 |
-| P3 | 无 worker 复用 | 每个工具都是裸进程；要跑批量目标（多 URL）得自己写循环或用「自由命令」 |
+| P3 | 无 worker 复用 | 多目标会起多个独立进程（各自一个标签），不共享 worker；大批量会占用多进程 |

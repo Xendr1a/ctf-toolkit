@@ -451,8 +451,12 @@ class Handler(BaseHTTPRequestHandler):
     def static(self, p: Path):
         try:
             p = p.resolve()
-            if not str(p).startswith(str(ROOT)):
-                return self.j({"error": "forbidden"}, 403)
+        except OSError:
+            return self.j({"error": "not found"}, 404)
+        # 用 is_relative_to 而不是 startswith：后者对 "ROOT 名字前缀" 的同级目录会误判放行
+        if not p.is_relative_to(ROOT):
+            return self.j({"error": "forbidden"}, 403)
+        try:
             if p.is_dir():
                 p = p / "index.html"
             data = p.read_bytes()
