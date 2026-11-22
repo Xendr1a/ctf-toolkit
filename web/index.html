@@ -49,6 +49,7 @@
     <section id="runbar">
       <button id="runBtn" class="primary">▶ 运行</button>
       <button id="stopBtn" class="danger" disabled>■ 停止</button>
+      <button id="stopAllBtn" class="danger" disabled>■ 停止全部</button>
       <span class="vsep"></span>
       <button id="copyBtn" class="ghost">复制命令</button>
       <button id="copyOutBtn" class="ghost">复制输出</button>
@@ -66,13 +67,25 @@
 
     <section id="cmdline" class="cmdline muted" title="点击复制"></section>
 
+    <section id="findbar" class="hidden">
+      <input id="find" placeholder="在输出里查找…（Enter 下一个 · Shift+Enter 上一个）" spellcheck="false">
+      <span id="findCount" class="muted"></span>
+      <button id="findPrev" class="ghost sm" title="上一个">↑</button>
+      <button id="findNext" class="ghost sm" title="下一个">↓</button>
+      <button id="findClear" class="ghost sm" title="清除">×</button>
+    </section>
+
     <section id="outwrap">
       <pre id="out"></pre>
     </section>
   </main>
 </div>
 <div id="history" class="drawer hidden">
-  <div class="drawer-hd"><b>历史记录</b><button class="ghost sm" id="histClose">关闭</button></div>
+  <div class="drawer-hd">
+    <b>历史记录</b>
+    <input id="histSearch" placeholder="搜索工具/命令…" spellcheck="false">
+    <button class="ghost sm" id="histClose">关闭</button>
+  </div>
   <div id="histList"></div>
 </div>
 <script src="/web/app.js"></script>

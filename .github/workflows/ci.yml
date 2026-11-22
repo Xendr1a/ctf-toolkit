@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Python 单测
+        run: python3 -m unittest discover -v
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JS 语法检查
+        run: node --check web/app.js
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Rust 格式检查
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check

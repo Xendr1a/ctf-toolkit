@@ -75,16 +75,28 @@ def load_config() -> dict:
     return cfg | {"tool": tools}
 
 
+_WL_CACHE: dict = {"mtime": 0.0, "items": []}   # 字典目录 mtime 变了才重新数行数
+
+
 def wordlists() -> list[dict]:
-    out = []
     d = ROOT / "wordlists"
-    if d.is_dir():
-        for p in sorted(d.glob("*.txt")):
-            try:
-                n = sum(1 for _ in p.open("rb"))
-            except OSError:
-                n = 0
-            out.append({"path": f"wordlists/{p.name}", "label": f"{p.name}（{n} 行）"})
+    if not d.is_dir():
+        return []
+    try:
+        m = d.stat().st_mtime
+    except OSError:
+        return []
+    if m == _WL_CACHE["mtime"]:
+        return _WL_CACHE["items"]
+    out = []
+    for p in sorted(d.glob("*.txt")):
+        try:
+            n = sum(1 for _ in p.open("rb"))
+        except OSError:
+            n = 0
+        out.append({"path": f"wordlists/{p.name}", "label": f"{p.name}（{n} 行）"})
+    _WL_CACHE["mtime"] = m
+    _WL_CACHE["items"] = out
     return out
 
 
@@ -139,6 +151,7 @@ RUNS: dict[str, Run] = {}
 HISTORY_FILE = STATE / "history.jsonl"
 HISTORY: list[dict] = []
 START = time.time()
+_HIST_APPENDS = 0          # 会话内每 50 条把 history.jsonl 重写一次，防止长会话文件无限涨
 
 
 def load_history():
@@ -150,14 +163,26 @@ def load_history():
                 pass
 
 
+def _rewrite_history():
+    try:
+        HISTORY_FILE.write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in HISTORY))
+    except OSError:
+        pass
+
+
 def append_history(rec: dict):
+    global _HIST_APPENDS
     HISTORY.append(rec)
     del HISTORY[:-300]
+    _HIST_APPENDS += 1
     try:
         with HISTORY_FILE.open("a") as f:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except OSError:
         pass
+    if _HIST_APPENDS % 50 == 0:
+        _rewrite_history()
 
 
 # ───────────────────────────── 命令拼装 ─────────────────────────────
@@ -231,10 +256,9 @@ def build(tool: dict, values: list, extra: str, target: str) -> tuple[list[str],
             parts.append(raw if f.get("raw") else shlex.quote(raw))
         if extra and extra.strip():
             parts.append(subst(extra.strip(), target))
-        argv = list(tool["cmd"]) + [" ".join(parts).replace("wordlists/", str(ROOT / "wordlists") + "/")]
-    else:
-        argv = list(tool["cmd"]) + args
-    argv = list(tool["cmd"]) + abs_wordlists(argv[len(tool["cmd"]):])
+        # shell 模式把整段拼成一条命令交给 bash；字典相对路径在这里一次性替换掉
+        args = [" ".join(parts).replace("wordlists/", str(ROOT / "wordlists") + "/")]
+    argv = list(tool["cmd"]) + abs_wordlists(args)
     pretty = " ".join(shlex.quote(a) for a in argv)
     return argv, pretty
 
@@ -268,6 +292,9 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
         if p and not any(env.get(k) for k in ("http_proxy", "HTTP_PROXY")):
             env["http_proxy"] = env["https_proxy"] = env["HTTP_PROXY"] = env["HTTPS_PROXY"] = p
 
+    if not _SLOTS.acquire(blocking=False):
+        raise ValueError(f"并发已满（最多 {MAX_CONCURRENT} 个同时跑），先停几个再试")
+
     try:
         run.proc = subprocess.Popen(
             argv, cwd=str(cwd_p), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -275,27 +302,32 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
             start_new_session=True, env=env,
         )
     except FileNotFoundError as e:
+        _SLOTS.release()
         raise ValueError(f"命令不存在: {argv[0]} ({e})") from e
     except OSError as e:
+        _SLOTS.release()
         raise ValueError(f"启动失败: {e}") from e
 
     RUNS[run.id] = run
 
     def pump():
-        with run.log_path.open("w", errors="replace") as log:
-            assert run.proc and run.proc.stdout
-            for line in run.proc.stdout:
-                line = ANSI_RE.sub("", line)
-                run.add(line.rstrip("\r\n"))
-                log.write(line)
-                log.flush()
-        rc = run.proc.wait()
-        run.rc = rc
-        run.ended = time.time()
-        run.status = ("done" if rc in run.ok_codes else "killed" if rc < 0 else "failed")
-        run.add(f"\n[退出码 {rc}] {run.status} · 耗时 {run.elapsed:.1f}s")
-        append_history(run.meta() | {"cmdline": run.cmdline, "cwd": run.cwd})
-        trim_runs()
+        try:
+            with run.log_path.open("w", errors="replace") as log:
+                assert run.proc and run.proc.stdout
+                for line in run.proc.stdout:
+                    line = ANSI_RE.sub("", line)
+                    run.add(line.rstrip("\r\n"))
+                    log.write(line)
+                    log.flush()
+            rc = run.proc.wait()
+            run.rc = rc
+            run.ended = time.time()
+            run.status = ("done" if rc in run.ok_codes else "killed" if rc < 0 else "failed")
+            run.add(f"\n[退出码 {rc}] {run.status} · 耗时 {run.elapsed:.1f}s")
+            append_history(run.meta() | {"cmdline": run.cmdline, "cwd": run.cwd})
+            trim_runs()
+        finally:
+            _SLOTS.release()   # 无论正常/异常结束都释放并发名额
 
     threading.Thread(target=pump, daemon=True).start()
     return run
@@ -356,8 +388,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.static(ROOT / "web" / "index.html")
         if path.startswith("/web/") or path.startswith("/vendor/"):
             return self.static(ROOT / path.lstrip("/"))
-        if path.startswith("/dict/"):
-            return self.static(ROOT / path.lstrip("/"))
 
         if path == "/api/state":
             cfg = reload_config()
@@ -370,7 +400,7 @@ class Handler(BaseHTTPRequestHandler):
                 "wordlists_dir": str(ROOT / "wordlists"),
                 "workdir_default": cfg["app"].get("workdir_default", "~/ctf/evidence"),
                 "workdir_cwd": os.getcwd(),
-                "history": HISTORY[-60:],
+                "history": HISTORY,   # 全量（内存里最多 300 条），前端自己做搜索/分页
             })
 
         if path == "/api/poll":
@@ -433,6 +463,26 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=hard, daemon=True).start()
             return self.j({"ok": True})
 
+        if path == "/api/stop_all":
+            stopped = 0
+            for run in list(RUNS.values()):
+                if run.proc and run.proc.poll() is None:
+                    try:
+                        os.killpg(os.getpgid(run.proc.pid), signal.SIGTERM)
+                        stopped += 1
+                    except ProcessLookupError:
+                        pass
+            def hard_all():
+                time.sleep(3)
+                for run in list(RUNS.values()):
+                    if run.proc and run.proc.poll() is None:
+                        try:
+                            os.killpg(os.getpgid(run.proc.pid), signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+            threading.Thread(target=hard_all, daemon=True).start()
+            return self.j({"ok": True, "stopped": stopped})
+
         if path == "/api/export":
             run = RUNS.get(str(d.get("id")))
             rid = str(d.get("id"))
@@ -479,6 +529,8 @@ CFG_MTIME: float = 0.0
 PORT = 8787
 MAX_RUNS = 40              # 内存里最多留多少个 run（更老的从 RUNS 里丢掉，磁盘日志还在）
 KEEP_LOGS = 200            # 启动时保留最近多少个日志文件
+MAX_CONCURRENT = 20        # 同时真正在跑的进程上限，超过直接报错（防止批量目标把机器打爆）
+_SLOTS = threading.Semaphore(MAX_CONCURRENT)
 
 
 def reload_config() -> dict:
@@ -518,11 +570,7 @@ def prune_state():
             pass
     if len(HISTORY) > 400:
         del HISTORY[:-300]
-        try:
-            HISTORY_FILE.write_text(
-                "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in HISTORY))
-        except OSError:
-            pass
+        _rewrite_history()
 
 
 def main() -> int:

@@ -4,10 +4,14 @@ const S = {
   target: '', hist: [], chefFrame: null, worddir: '',
   runs: new Map(),   // run id -> 任务状态（插入序 = 标签序），每个任务独立轮询
   active: null,      // 当前显示的标签
+  find: '',          // 输出区查找关键字
+  findIdx: 0,        // 当前高亮第几个匹配
+  histShow: 0,       // 历史面板已渲染条数（分页）
 };
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
-const esc = (s) => String(s);
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function api(path, opts = {}) {
   const r = await fetch(path, { headers: { 'X-Requested-By': 'toolkit', 'Content-Type': 'application/json' }, ...opts });
@@ -32,14 +36,21 @@ async function init() {
   $('extra').addEventListener('input', preview);
   $('runBtn').onclick = run;
   $('stopBtn').onclick = stop;
+  $('stopAllBtn').onclick = stopAll;
   $('copyBtn').onclick = () => copy($('cmdline').dataset.cmd || '');
   $('cmdline').onclick = () => copy($('cmdline').dataset.cmd || '');
   $('copyOutBtn').onclick = () => { const r = activeRun(); if (r) copy(outText(r)); };
   $('clearOutBtn').onclick = clearOut;
   $('exportBtn').onclick = exportLog;
   $('wrap').addEventListener('change', e => { $('out').classList.toggle('nowrap', !e.target.checked); $('outwrap').scrollLeft = 0; });
-  $('histBtn').onclick = () => { renderHist(); $('history').classList.toggle('hidden'); };
+  $('find').addEventListener('input', e => { S.find = e.target.value; S.findIdx = 0; const r = activeRun(); if (r) renderOut(r); });
+  $('find').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); gotoMatch(e.shiftKey ? -1 : 1); } });
+  $('findNext').onclick = () => gotoMatch(1);
+  $('findPrev').onclick = () => gotoMatch(-1);
+  $('findClear').onclick = () => { S.find = ''; $('find').value = ''; S.findIdx = 0; const r = activeRun(); if (r) renderOut(r); };
+  $('histBtn').onclick = () => { S.histShow = 0; renderHist(); $('history').classList.toggle('hidden'); };
   $('histClose').onclick = () => $('history').classList.add('hidden');
+  $('histSearch').addEventListener('input', () => { S.histShow = 0; renderHist(); });
   document.addEventListener('keydown', e => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); }
     if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); $('search').focus(); }
@@ -79,7 +90,7 @@ function selectTool(id) {
   if (t.view === 'iframe') {
     $('runbar').classList.add('hidden'); $('cmdline').classList.add('hidden');
     $('outwrap').classList.add('hidden'); $('extraWrap').classList.add('hidden');
-    $('tabs').classList.add('hidden');
+    $('tabs').classList.add('hidden'); $('findbar').classList.add('hidden');
     if (!S.chefFrame) { S.chefFrame = el('iframe', 'chef'); }
     S.chefFrame.src = t.url;
     wrap.appendChild(S.chefFrame);
@@ -90,6 +101,7 @@ function selectTool(id) {
   }
   $('runbar').classList.remove('hidden'); $('cmdline').classList.remove('hidden');
   $('outwrap').classList.remove('hidden'); $('extraWrap').classList.remove('hidden');
+  $('findbar').classList.remove('hidden');
   $('tabs').classList.toggle('hidden', S.runs.size === 0);
   $('extra').value = '';
   wrap.className = '';
@@ -231,6 +243,7 @@ function subst(s) {
   return String(s).replaceAll('{{TARGET}}', tg);
 }
 function quote(a) { return /[^\w@%+=:,./\u4e00-\u9fa5-]/.test(a) ? "'" + a.replaceAll("'", "'\\''") + "'" : a; }
+/* 注意：preview() 是后端 toolkit.py build() 的本地镜像，改拼装逻辑时两处要同步改 */
 function preview() {
   const t = S.tools.find(x => x.id === S.sel);
   if (!t || t.view === 'iframe') return;
@@ -412,6 +425,7 @@ function updatePill() {
   const n = [...S.runs.values()].filter(r => r.status === 'running').length;
   $('running').textContent = `● ${n} 运行中`;
   $('running').classList.toggle('hidden', n === 0);
+  $('stopAllBtn').disabled = n === 0;
 }
 
 function pushLines(r, arr) {
@@ -444,7 +458,17 @@ function clearOut() {
 function renderOut(r) {
   const pre = $('out');
   const note = r.dropped ? `… 前面 ${r.dropped} 行未显示（完整日志见导出文件）…\n` : '';
-  pre.replaceChildren(document.createTextNode(note + r.lines.join('\n')));
+  const text = note + r.lines.join('\n');
+  if (S.find) {
+    // 查找高亮：先转义再包 <mark>，安全地做 innerHTML
+    const escFind = escapeHtml(S.find);
+    const re = new RegExp(escapeRegExp(escFind), 'gi');
+    pre.innerHTML = escapeHtml(text).replace(re, m => '<mark>' + m + '</mark>');
+    applyFindHighlight();
+  } else {
+    pre.replaceChildren(document.createTextNode(text));
+    $('findCount').textContent = '';
+  }
   view.id = r.id; view.rendered = r.lines.length; view.dropped = r.dropped;
   updateLines(r);
   if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
@@ -452,7 +476,7 @@ function renderOut(r) {
 
 /* 只在尾部追加新行，不重写整段，避免大输出下每 280ms 全量重绘导致卡顿 */
 function appendOut(r) {
-  if (view.id !== r.id) return renderOut(r);   // 切换过标签等异常情况，退回全量
+  if (S.find || view.id !== r.id) return renderOut(r);   // 查找中/切换过标签，退回全量
   const pre = $('out');
   const fresh = r.lines.slice(view.rendered);
   if (!fresh.length) return;
@@ -462,11 +486,35 @@ function appendOut(r) {
   if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
 }
 
+function applyFindHighlight() {
+  const marks = $('out').querySelectorAll('mark');
+  const n = marks.length;
+  $('findCount').textContent = S.find ? (n ? `${n} 个匹配` : '无匹配') : '';
+  if (!n) return;
+  if (S.findIdx < 0 || S.findIdx >= n) S.findIdx = 0;
+  marks.forEach((m, i) => m.classList.toggle('cur', i === S.findIdx));
+}
+
+function gotoMatch(delta) {
+  const marks = $('out').querySelectorAll('mark');
+  if (!marks.length) return;
+  S.findIdx = (S.findIdx + delta + marks.length) % marks.length;
+  marks.forEach((m, i) => m.classList.toggle('cur', i === S.findIdx));
+  marks[S.findIdx].scrollIntoView({ block: 'center' });
+}
+
 async function stop() {
   const r = activeRun();
   if (!r || r.status !== 'running') return;
   try { await api('/api/stop', { method: 'POST', body: JSON.stringify({ id: r.id }) }); }
   catch (e) { pushLines(r, ['✗ ' + e.message]); }
+}
+
+async function stopAll() {
+  try {
+    const resp = await api('/api/stop_all', { method: 'POST', body: JSON.stringify({}) });
+    $('stat').textContent = `已停止 ${resp.stopped} 个任务`;
+  } catch (e) { $('stat').textContent = '✗ ' + e.message; }
 }
 
 async function exportLog() {
@@ -487,10 +535,16 @@ function copy(text) {
 }
 
 /* ───────────── 历史 ───────────── */
+const HIST_PAGE = 50;
+
 function renderHist() {
   const list = $('histList'); list.innerHTML = '';
-  if (!S.hist.length) { list.appendChild(el('div', 'muted', '（还没有历史记录）')); return; }
-  [...S.hist].reverse().forEach(h => {
+  const q = ($('histSearch').value || '').trim().toLowerCase();
+  const items = [...S.hist].reverse().filter(h =>
+    !q || ((h.title || '') + ' ' + (h.tool_id || '') + ' ' + (h.cmdline || '')).toLowerCase().includes(q));
+  if (!items.length) { list.appendChild(el('div', 'muted', q ? '（没有匹配）' : '（还没有历史记录）')); return; }
+  const shown = items.slice(0, S.histShow || HIST_PAGE);
+  shown.forEach(h => {
     const row = el('div', 'hrow');
     const ts = new Date(h.started * 1000).toLocaleString();
     row.appendChild(el('div', 't', `${h.title || h.tool_id} · ${h.status}${h.rc != null ? ' (rc=' + h.rc + ')' : ''}`));
@@ -498,6 +552,11 @@ function renderHist() {
     row.onclick = () => openReplay(h);
     list.appendChild(row);
   });
+  if (items.length > shown.length) {
+    const more = el('button', 'ghost sm', `加载更多（${shown.length}/${items.length}）`);
+    more.onclick = () => { S.histShow = shown.length + HIST_PAGE; renderHist(); };
+    list.appendChild(more);
+  }
 }
 
 /* 回放也开成标签：不冲掉正在跑的实时视图；同一 id 已有标签就直接切过去 */

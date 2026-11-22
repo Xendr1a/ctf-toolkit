@@ -1,6 +1,7 @@
 // CTF Toolkit 桌面壳。界面仍是 web/（从后端回环端口加载），壳只负责：
 // 起 Python 后端子进程 → 从 stdout 读真实端口 → 开原生窗口 → 退出时回收后端。
 use std::io::{BufRead, BufReader};
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,6 +17,24 @@ static GOT_SIGNAL: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn on_signal(_sig: libc::c_int) {
     GOT_SIGNAL.store(true, Ordering::SeqCst); // 信号处理里只做原子写，退出交给 watcher 线程
+}
+
+/// 单实例锁：flock 排它锁，拿到就返回 File（进程活着期间持有），拿不到返回 None。
+/// 进程退出/崩溃时内核自动释放锁，不会有 PID 文件那种僵尸锁。
+fn acquire_single_instance_lock() -> Option<std::fs::File> {
+    let uid = unsafe { libc::getuid() };
+    let path = std::env::temp_dir().join(format!("ctf-toolkit-{uid}.lock"));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .ok()?;
+    let ret = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if ret != 0 {
+        return None;
+    }
+    Some(file)
 }
 
 fn repo_root() -> PathBuf {
@@ -51,6 +70,15 @@ fn stop_backend(child: &mut Child) {
 }
 
 fn main() {
+    // 单实例锁：已经有实例在跑就直接退出，避免起两个后端两个窗口
+    let _lock = match acquire_single_instance_lock() {
+        Some(f) => f,
+        None => {
+            eprintln!("ctf-toolkit 已在运行（单实例锁）");
+            std::process::exit(0);
+        }
+    };
+
     let root = repo_root();
     let script = root.join("toolkit.py");
     if !script.is_file() {
