@@ -51,13 +51,9 @@ CI（GitHub Actions）在每次 push 时运行单元测试、JS 语法检查与 
 
 | 分类 | 工具 | 定位 |
 |---|---|---|
-| 探测 | `curl` `whatweb` `httpx` `nmap` | 手工请求、指纹、存活探测、端口 |
-| 探测 | `katana` `waybackurls` `subfinder` `dnsx` `amass` | 爬站 / 历史 URL / 子域与资产枚举 |
-| 探测 | `wafw00f` `arjun` | WAF 识别 / 隐藏参数发现 |
+| 探测 | `curl` `whatweb` `httpx` `nmap` `katana` `waybackurls` `subfinder` `dnsx` `amass` `wafw00f` `arjun` | 手工请求、指纹、存活探测、爬站、历史 URL、子域资产、WAF 识别、隐藏参数 |
 | 爆破 | `ffuf` `dirsearch` `gobuster` `feroxbuster` | 目录 / 子域 / 参数 |
-| 漏洞利用 | `sqlmap` `nuclei` `dalfox` | SQLi、模板扫描、XSS |
-| 漏洞利用 | `fenjing` | SSTI |
-| 漏洞利用 | `jwt_tool` `phpggc` `php_filter_chain` `ysoserial` | JWT、PHP/Java 反序列化、filter chain |
+| 漏洞利用 | `sqlmap` `nuclei` `dalfox` `fenjing` `jwt_tool` `phpggc` `php_filter_chain` `ysoserial` | SQLi、模板扫描、XSS、SSTI、JWT、PHP/Java 反序列化 |
 | 本地/辅助 | `静态服务` `nc 监听` `自由命令` `CyberChef` | 起站、收 shell、任意命令、编解码 |
 
 工具本体不迁移，`tools.toml` 仅记录调用方式。
