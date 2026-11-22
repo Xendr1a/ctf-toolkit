@@ -5,3 +5,8 @@
 __pycache__/
 *.pyc
 /.hg/
+
+# 桌面壳（Tauri）
+/node_modules/
+/src-tauri/target/
+/src-tauri/gen/schemas/

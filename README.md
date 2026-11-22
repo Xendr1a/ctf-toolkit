@@ -1,9 +1,9 @@
 # CTF Toolkit
 
-把散落在 `~/.local/bin`、`~/ctf/tools`、docker 镜像里的命令行工具收进**一个本地网页**：
+把散落在 `~/.local/bin`、`~/ctf/tools`、docker 镜像里的命令行工具收进**一个桌面应用**（Tauri 原生窗口，也可纯浏览器模式）：
 左栏点工具 → 表单填参数 → 「▶ 运行」→ 输出实时流回页面。不用记 flag，命令行可以一键复制回终端。
 
-- 纯本地：只监听 `127.0.0.1`，无第三方依赖（Python 标准库 + `tomllib`）
+- 纯本地：只监听 `127.0.0.1`；浏览器模式零依赖（Python 标准库 + `tomllib`），桌面模式用系统 webview（webkit2gtk）
 - 21 个工具 / 4 个分类，专注 Web；每个都带**预设**（列库、拖表、目录爆破、JWT 攻击、SSTI、PHP gadget、爬站…）
 - 顶部「目标」框自动填主字段（`{{TARGET}}` 占位符）
 - 输出实时流式显示，可停止、可导出到 `~/ctf/evidence/`
@@ -26,6 +26,19 @@
 
 ## 安装 / 启动
 
+### 桌面模式（Tauri 原生窗口，推荐）
+
+```bash
+npm install                        # 装 @tauri-apps/cli（仅构建期）
+npx tauri build                    # 出 src-tauri/target/release/ctf-toolkit（~8MB）
+bash scripts/install-desktop.sh    # 软链 ~/.local/bin/ctf-toolkit + 应用菜单入口
+```
+
+应用菜单（fuzzel/rofi）或 `ctf-toolkit` 启动。壳自动起 Python 后端子进程（内核分配端口），
+关窗口 / Ctrl-C / kill 都会回收后端；后端自己死了窗口自动关。指向别的仓库用 `TOOLKIT_ROOT=/path/to/repo`。
+构建依赖：Rust ≥1.77、node、webkit2gtk-4.1 / gtk3 / libsoup3（Arch 官方源都有）。
+
+### 浏览器模式（零依赖）
 ```bash
 # 重新拉外部资源（字典 + 离线 CyberChef、约 80MB；这俩不进 git）
 bash scripts/fetch-vendor.sh
@@ -42,7 +55,7 @@ ln -sf "$PWD/bin/toolkit" ~/.local/bin/toolkit
 自测（两套，跑完都绿就说明基础链路没坏）：
 
 ```bash
-python3 -m unittest discover -s selftest -t .   # 16 个纯函数单测：拼命令/目标替换/字典路径/run 淘汰
+python3 -m unittest discover -s selftest -t .   # 17 个单测：拼命令/目标替换/字典路径/run 淘汰/桌面握手
 python3 selftest/smoke.py                       # 6/6 通过 === 端到端链路都通
 python3 selftest/smoke.py --keep                # 跑完不关靶站，方便自己点着玩
 ```
@@ -112,7 +125,9 @@ tools.toml        # 工具注册表（要加工具改这里）
 web/              # 前端（原生 JS，无构建步骤）
 wordlists/        # 自带字典，UI 里下拉可选（gitignored，用 fetch-vendor.sh 拉）
 vendor/cyberchef/ # 离线 CyberChef v11.6.0（gitignored，用 fetch-vendor.sh 解包）
-scripts/          # fetch-vendor.sh
+scripts/          # fetch-vendor.sh / install-desktop.sh
+src-tauri/        # Tauri 桌面壳（Rust：后端子进程管理 + 原生窗口）
+package.json      # 构建期依赖 @tauri-apps/cli
 selftest/         # 自测：本地 PHP 靶站 + 6 条链路的断言脚本
 bin/toolkit       # 启动器
 ```
@@ -131,6 +146,8 @@ bin/toolkit       # 启动器
 - **热重载**：`tools.toml` 存盘即生效（服务端按 mtime 重读）；改坏了会打一条 warn 并继续用旧配置，不会把服务打挂。
 - **状态清理**：运行日志保留最近 200 个（启动时清理），`history.jsonl` 超 400 条自动裁剪到 300；
   内存里最多留 40 个 run（更老的丢内存，磁盘日志按保留策略走）。
+- **桌面壳**：窗口加载后端回环端口，安全模型与浏览器模式完全相同；壳只管进程生命周期。
+  二进制搬出仓库时从可执行文件目录向上找 `tools.toml`，找不到用 `TOOLKIT_ROOT` 指定。
 
 ## 已知限制 / 还能优化的
 

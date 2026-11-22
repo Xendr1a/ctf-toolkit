@@ -524,7 +524,7 @@ def prune_state():
 def main() -> int:
     global CFG, CFG_MTIME, PORT
     ap = argparse.ArgumentParser(description="CTF Toolkit 本地 Web 界面")
-    ap.add_argument("--port", type=int, default=0)
+    ap.add_argument("--port", type=int, default=None, help="0 = 内核分配空闲端口（桌面壳用）")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--host", default="127.0.0.1", help="只允许回环地址；对外暴露需再加 --allow-remote")
     ap.add_argument("--allow-remote", action="store_true", help="允许绑定非回环地址（危险）")
@@ -532,7 +532,7 @@ def main() -> int:
 
     CFG = load_config()
     CFG_MTIME = (ROOT / "tools.toml").stat().st_mtime
-    PORT = a.port or int(CFG["app"].get("port", 8787))
+    PORT = a.port if a.port is not None else int(CFG["app"].get("port", 8787))
     load_history()
     prune_state()
 
@@ -542,10 +542,15 @@ def main() -> int:
                   f"确实要对外暴露，加 --allow-remote（风险自负）。", file=sys.stderr)
             return 2
 
+    # 桌面壳（Tauri）关窗口时发 SIGTERM：走正常退出路径，finally 里清理工具进程
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+
     httpd = ThreadingHTTPServer((a.host, PORT), Handler)
+    PORT = httpd.server_address[1]   # --port 0 时拿内核分配的真实端口（桌面壳从 stdout 读）
     httpd.daemon_threads = True
     url = f"http://127.0.0.1:{PORT}/"
-    print(f"ctf-toolkit · {len(CFG['tool'])} 个工具 · {url}")
+    # stdout 被桌面壳管道捕获时默认全缓冲，必须立即交出端口完成启动握手。
+    print(f"ctf-toolkit · {len(CFG['tool'])} 个工具 · {url}", flush=True)
     print("Ctrl-C 退出")
     if not a.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()

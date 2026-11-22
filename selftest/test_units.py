@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
-"""纯函数单测：命令拼装、目标替换、字典路径、run 淘汰。不需要起服务。
+"""命令拼装、目标替换、字典路径、run 淘汰与桌面后端握手测试。
 
   python3 -m unittest discover -s selftest -t .   （在仓库根目录）
 """
 from __future__ import annotations
 
 import importlib.util
+import json
+import re
+import select
+import subprocess
 import sys
 import time
 import unittest
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -139,6 +144,38 @@ class ConfigTest(unittest.TestCase):
             self.assertTrue(t["category"] in tk.CATEGORIES, f"{t['id']} 分类未知")
             tgt = [f for f in t["fields"] if f.get("tgt")]
             self.assertLessEqual(len(tgt), 1, f"{t['id']} 标了多个 tgt 字段")
+
+
+class DesktopBackendTest(unittest.TestCase):
+    def test_dynamic_port_handshake_and_sigterm(self):
+        proc = subprocess.Popen(
+            [sys.executable, str(ROOT / "toolkit.py"), "--no-browser", "--port", "0"],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            ready, _, _ = select.select([proc.stdout], [], [], 3)
+            self.assertTrue(ready, "后端端口被 stdout 缓冲，桌面壳无法完成启动握手")
+            line = proc.stdout.readline()
+            match = re.search(r"http://127\.0\.0\.1:(\d+)/", line)
+            self.assertIsNotNone(match, f"启动输出缺少 URL: {line!r}")
+            port = int(match.group(1))
+            self.assertNotEqual(port, 0)
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=2) as response:
+                state = json.load(response)
+            self.assertIn("tools", state)
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            proc.stdout.close()
+            proc.stderr.close()
+        self.assertEqual(proc.returncode, 0)
 
 
 if __name__ == "__main__":
