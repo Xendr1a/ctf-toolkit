@@ -64,6 +64,19 @@ main{grid-area:main;display:flex;flex-direction:column;padding:14px 16px;gap:10p
 #runbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #runbar .toggle{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
 #runbar .toggle input{width:auto}
+.tabs{display:flex;gap:6px;overflow-x:auto;flex:none;padding-bottom:2px}
+.tab{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--line);border-radius:7px;
+     background:var(--panel2);cursor:pointer;font-size:12px;color:#b9c3d1;white-space:nowrap;flex:none}
+.tab:hover{border-color:#3a4350;background:#222833}
+.tab.active{background:#1d2b3a;border-color:var(--acc2);color:#fff}
+.tdot{width:7px;height:7px;border-radius:50%;background:#57606d;flex:none}
+.tdot.running{background:var(--ok);animation:pulse 1.2s infinite}
+.tdot.failed,.tdot.error{background:var(--err)}
+.tdot.killed{background:var(--warn)}
+@keyframes pulse{50%{opacity:.35}}
+.tab .tid{color:var(--muted);font-family:var(--mono);font-size:10.5px}
+.tab .tx{border:none;background:transparent;padding:0 2px;color:var(--muted);font-size:13px;line-height:1;border-radius:4px}
+.tab .tx:hover{color:var(--err);background:transparent}
 .cmdline{font-family:var(--mono);font-size:12px;background:#11151a;border:1px solid var(--line);border-radius:7px;
          padding:7px 10px;white-space:pre-wrap;word-break:break-all;cursor:pointer;max-height:80px;overflow:auto;color:#9fb0c4}
 #outwrap{flex:1;min-height:120px;background:#0b0d10;border:1px solid var(--line);border-radius:8px;overflow:auto}

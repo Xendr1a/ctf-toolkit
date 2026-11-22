@@ -1,8 +1,9 @@
 'use strict';
 const S = {
   tools: [], cats: {}, wordlists: [], sel: null, filter: '',
-  runId: null, next: 0, polling: false,
-  target: '', hist: [], chefFrame: null, lines: [], dropped: 0, worddir: '', idle: 0,
+  target: '', hist: [], chefFrame: null, worddir: '',
+  runs: new Map(),   // run id -> 任务状态（插入序 = 标签序），每个任务独立轮询
+  active: null,      // 当前显示的标签
 };
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
@@ -75,6 +76,7 @@ function selectTool(id) {
   if (t.view === 'iframe') {
     $('runbar').classList.add('hidden'); $('cmdline').classList.add('hidden');
     $('outwrap').classList.add('hidden'); $('extraWrap').classList.add('hidden');
+    $('tabs').classList.add('hidden');
     if (!S.chefFrame) { S.chefFrame = el('iframe', 'chef'); }
     S.chefFrame.src = t.url;
     wrap.appendChild(S.chefFrame);
@@ -85,6 +87,7 @@ function selectTool(id) {
   }
   $('runbar').classList.remove('hidden'); $('cmdline').classList.remove('hidden');
   $('outwrap').classList.remove('hidden'); $('extraWrap').classList.remove('hidden');
+  $('tabs').classList.toggle('hidden', S.runs.size === 0);
   $('extra').value = '';
   wrap.className = '';
   wrap.style.cssText = '';
@@ -249,76 +252,161 @@ function splitArgs(s) {
   return out;
 }
 
-/* ───────────── 运行 ───────────── */
+/* ───────────── 运行（多任务标签，各自独立轮询/缓冲） ───────────── */
+const OUT_KEEP = 4000;   // 每个任务在页面里最多保留多少行（超出只丢渲染，不影响磁盘日志）
+const MAX_TABS = 12;     // 标签软上限：超出先关最旧的已结束标签；全在跑就暂超，不强杀
+
+const activeRun = () => S.runs.get(S.active) || null;
+const isChef = () => { const t = S.tools.find(x => x.id === S.sel); return !!t && t.view === 'iframe'; };
+
 async function run() {
-  if (S.polling && !confirm('当前任务还在跑：开新任务会丢掉它的实时视图（日志仍会保存）。继续？')) return;
   const t = S.tools.find(x => x.id === S.sel);
   if (!t || t.view === 'iframe') return;
   const body = { tool: S.sel, values: values(), extra: ($('extra') ? $('extra').value : ''), target: S.target, cwd: $('cwd').value.trim() };
-  $('out').innerHTML = ''; $('stat').textContent = '';
-  S.lines = []; S.dropped = 0; S.idle = 0;
+  $('runBtn').disabled = true;
+  let resp;
   try {
-    const r = await api('/api/run', { method: 'POST', body: JSON.stringify(body) });
-    S.runId = r.id; S.next = 0; S.polling = true;
-    $('cmdline').textContent = r.cmdline; $('cmdline').dataset.cmd = r.cmdline;
-    $('stopBtn').disabled = false; $('runBtn').disabled = true;
-    $('running').classList.remove('hidden');
-    poll();
+    resp = await api('/api/run', { method: 'POST', body: JSON.stringify(body) });
   } catch (e) {
-    appendLine('✗ ' + e.message, true);
+    $('runBtn').disabled = false;
+    $('stat').textContent = '✗ ' + e.message;
+    return;
   }
+  $('runBtn').disabled = false;
+  const r = { id: resp.id, toolId: t.id, icon: t.icon || '🧰', name: t.name, cmdline: resp.cmdline,
+              lines: [], dropped: 0, next: 0, idle: 0, status: 'running', rc: null, elapsed: 0, replay: false };
+  addTab(r);
+  poll(r);
 }
 
-async function poll() {
-  if (!S.runId) return;
+function addTab(r) {
+  S.runs.set(r.id, r);
+  if (S.runs.size > MAX_TABS) {
+    for (const [id, old] of S.runs) {
+      if (old.status !== 'running') { S.runs.delete(id); break; }
+    }
+  }
+  activate(r.id);
+}
+
+function activate(id) {
+  const r = S.runs.get(id);
+  if (!r) return;
+  S.active = id;
+  $('cmdline').textContent = r.cmdline; $('cmdline').dataset.cmd = r.cmdline;
+  renderOut(r);
+  syncRunbar(r);
+  renderTabs();
+}
+
+function renderTabs() {
+  const bar = $('tabs');
+  bar.innerHTML = '';
+  bar.classList.toggle('hidden', S.runs.size === 0 || isChef());
+  for (const r of S.runs.values()) {
+    const tab = el('div', 'tab' + (r.id === S.active ? ' active' : ''));
+    tab.title = r.cmdline;
+    tab.appendChild(el('span', 'tdot ' + r.status));
+    tab.appendChild(el('span', 'tname', r.icon + ' ' + r.name));
+    tab.appendChild(el('span', 'tid', '#' + r.id.slice(0, 4)));
+    const x = el('button', 'tx', '×');
+    x.title = r.status === 'running' ? '停止并关闭' : '关闭';
+    x.onclick = (e) => { e.stopPropagation(); closeTab(r.id); };
+    tab.appendChild(x);
+    tab.onclick = () => activate(r.id);
+    bar.appendChild(tab);
+  }
+  updatePill();
+}
+
+function closeTab(id) {
+  const r = S.runs.get(id);
+  if (!r) return;
+  if (r.status === 'running') {
+    api('/api/stop', { method: 'POST', body: JSON.stringify({ id }) }).catch(() => {});
+  }
+  S.runs.delete(id);   // poll 循环发现标签没了会自行退出
+  if (S.active === id) {
+    const last = [...S.runs.keys()].pop();
+    if (last) activate(last);
+    else {
+      S.active = null;
+      $('out').textContent = ''; $('stat').textContent = ''; $('stopBtn').disabled = true;
+      preview();
+    }
+  }
+  renderTabs();
+}
+
+async function poll(r) {
+  if (!S.runs.has(r.id)) return;
   try {
-    const r = await api('/api/poll?id=' + S.runId + '&from=' + S.next);
-    S.next = r.next;
-    appendLines(r.lines);
+    const p = await api('/api/poll?id=' + r.id + '&from=' + r.next);
+    if (!S.runs.has(r.id)) return;
+    r.next = p.next;
+    pushLines(r, p.lines);
     // 长时间没新输出就退避（sqlmap/nuclei 会静默很久），有输出立刻恢复快轮询
-    S.idle = r.lines.length ? 0 : (S.idle || 0) + 1;
-    $('stat').textContent = `${r.status} · ${r.elapsed}s`;
-    if (r.status === 'running') { setTimeout(poll, S.idle > 8 ? 1200 : 280); return; }
-    finish(r.status, r.rc, r.elapsed);
+    r.idle = p.lines.length ? 0 : r.idle + 1;
+    r.status = p.status; r.rc = p.rc; r.elapsed = p.elapsed;
+    if (p.status === 'running') {
+      if (r.id === S.active) $('stat').textContent = `${p.status} · ${p.elapsed}s`;
+      setTimeout(() => poll(r), r.idle > 8 ? 1200 : 280);
+      return;
+    }
+    finish(r);
   } catch (e) {
-    appendLine('✗ 轮询失败: ' + e.message, true);
-    finish('error', null, 0);
+    if (!S.runs.has(r.id)) return;
+    pushLines(r, ['✗ 轮询失败: ' + e.message]);
+    r.status = 'error';
+    finish(r);
   }
 }
 
-function finish(status, rc, elapsed) {
-  S.polling = false; $('runBtn').disabled = false; $('stopBtn').disabled = true;
-  $('running').classList.add('hidden');
-  $('stat').textContent = `${status}${rc != null ? ' (rc=' + rc + ')' : ''} · ${elapsed}s`;
+function finish(r) {
+  renderTabs();
+  if (r.id === S.active) syncRunbar(r);
 }
 
-const OUT_KEEP = 4000;   // 页面里最多保留多少行（超出只丢了渲染，不影响磁盘日志）
+function syncRunbar(r) {
+  $('stopBtn').disabled = !(r && r.status === 'running');
+  $('stat').textContent = r ? `${r.status}${r.rc != null ? ' (rc=' + r.rc + ')' : ''} · ${r.elapsed}s` : '';
+}
 
-function appendLines(arr) {
+function updatePill() {
+  const n = [...S.runs.values()].filter(r => r.status === 'running').length;
+  $('running').textContent = `● ${n} 运行中`;
+  $('running').classList.toggle('hidden', n === 0);
+}
+
+function pushLines(r, arr) {
   if (!arr || !arr.length) return;
-  for (const l of arr) S.lines.push(l);
-  if (S.lines.length > OUT_KEEP) {
-    S.dropped += S.lines.length - OUT_KEEP;
-    S.lines = S.lines.slice(-OUT_KEEP);
+  for (const l of arr) r.lines.push(l);
+  if (r.lines.length > OUT_KEEP) {
+    r.dropped += r.lines.length - OUT_KEEP;
+    r.lines = r.lines.slice(-OUT_KEEP);
   }
-  const pre = $('out');
-  pre.textContent = (S.dropped ? `… 前面 ${S.dropped} 行未显示（完整日志见导出文件）…\n` : '') + S.lines.join('\n');
+  if (r.id === S.active) renderOut(r);
+}
+
+function renderOut(r) {
+  $('out').textContent = (r.dropped ? `… 前面 ${r.dropped} 行未显示（完整日志见导出文件）…\n` : '') + r.lines.join('\n');
   if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
 }
 
-function appendLine(text) { appendLines([text]); }
-
 async function stop() {
-  if (!S.runId) return;
-  try { await api('/api/stop', { method: 'POST', body: JSON.stringify({ id: S.runId }) }); } catch (e) { appendLine('✗ ' + e.message, true); }
+  const r = activeRun();
+  if (!r || r.status !== 'running') return;
+  try { await api('/api/stop', { method: 'POST', body: JSON.stringify({ id: r.id }) }); }
+  catch (e) { pushLines(r, ['✗ ' + e.message]); }
 }
 
 async function exportLog() {
-  if (!S.runId) return appendLine('✗ 先跑一次再导出', true);
+  const r = activeRun();
+  if (!r) { $('stat').textContent = '✗ 先跑一次再导出'; return; }
   try {
-    const r = await api('/api/export', { method: 'POST', body: JSON.stringify({ id: S.runId }) });
-    appendLine('✓ 已保存: ' + r.path);
-  } catch (e) { appendLine('✗ ' + e.message, true); }
+    const resp = await api('/api/export', { method: 'POST', body: JSON.stringify({ id: r.id }) });
+    pushLines(r, ['✓ 已保存: ' + resp.path]);
+  } catch (e) { pushLines(r, ['✗ ' + e.message]); }
 }
 
 function copy(text) {
@@ -338,17 +426,24 @@ function renderHist() {
     const ts = new Date(h.started * 1000).toLocaleString();
     row.appendChild(el('div', 't', `${h.title || h.tool_id} · ${h.status}${h.rc != null ? ' (rc=' + h.rc + ')' : ''}`));
     row.appendChild(el('div', 's', ts + '  ' + (h.cmdline || '')));
-    row.onclick = async () => {
-      try {
-        const r = await api('/api/replay?id=' + h.id);
-        $('out').innerHTML = '';
-        appendLines(r.lines);
-        $('cmdline').textContent = h.cmdline || ''; $('cmdline').dataset.cmd = h.cmdline || '';
-        $('history').classList.add('hidden');
-      } catch (e) { appendLine('✗ ' + e.message, true); }
-    };
+    row.onclick = () => openReplay(h);
     list.appendChild(row);
   });
+}
+
+/* 回放也开成标签：不冲掉正在跑的实时视图；同一 id 已有标签就直接切过去 */
+async function openReplay(h) {
+  if (S.runs.has(h.id)) { activate(h.id); $('history').classList.add('hidden'); return; }
+  try {
+    const p = await api('/api/replay?id=' + h.id);
+    let lines = p.lines, dropped = 0;
+    if (lines.length > OUT_KEEP) { dropped = lines.length - OUT_KEEP; lines = lines.slice(-OUT_KEEP); }
+    const t = S.tools.find(x => x.id === h.tool_id) || {};
+    addTab({ id: h.id, toolId: h.tool_id, icon: t.icon || '🕘', name: h.title || t.name || h.tool_id,
+             cmdline: h.cmdline || '', lines, dropped, next: p.next, idle: 0,
+             status: 'done', rc: h.rc ?? null, elapsed: h.elapsed || 0, replay: true });
+    $('history').classList.add('hidden');
+  } catch (e) { $('stat').textContent = '✗ ' + e.message; }
 }
 
 init().catch(e => { document.body.innerHTML = '<pre style="padding:20px;color:#f66">加载失败: ' + e.message + '</pre>'; });
