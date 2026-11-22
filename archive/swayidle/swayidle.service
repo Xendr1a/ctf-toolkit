@@ -1,0 +1,9 @@
+# /home/srk/.config/systemd/user/swayidle.service
+[Unit]
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/swayidle -w timeout 600 /home/srk/.local/bin/idle-wrappers/lock.sh timeout 601 /home/srk/.local/bin/idle-wrappers/idle.sh resume /home/srk/.local/bin/idle-wrappers/resume.sh before-sleep /home/srk/.local/bin/idle-wrappers/sleep.sh
+Restart=on-failure

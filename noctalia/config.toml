@@ -1,0 +1,10 @@
+[backdrop]
+enabled = true
+blur_intensity = 0.5
+tint_intensity = 0.3
+
+# v5 launcher/clipboard ignore TabNext/TabPrevious; map Tab onto Up/Down instead.
+# Restore: cp ~/.config/noctalia/config.toml.bak-keybinds-20260907 ~/.config/noctalia/config.toml
+[keybinds]
+down = ["Down", "Tab"]
+up = ["Up", "Shift+Tab", "ISO_Left_Tab", "Shift+ISO_Left_Tab"]

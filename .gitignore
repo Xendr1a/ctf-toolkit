@@ -10,3 +10,38 @@ __pycache__/
 /node_modules/
 /src-tauri/target/
 /src-tauri/gen/schemas/
+
+# ---- 以下来自 upstream (Mel-SRK/My_config) ----
+# 凭据、令牌与个人数据：绝不入库。
+.hermes/
+**/.hermes/
+hermes/config.yaml
+
+# 凭据与令牌文件
+**/auth.json
+**/hosts.yml
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/id_rsa*
+**/id_ed25519*
+**/id_ecdsa*
+
+# 密钥环、密码库、SSH
+**/.ssh/
+**/.gnupg/
+**/.pam-gnupg/
+**/.password-store/
+
+# 应用数据目录
+**/.mozilla/
+**/.config/obsidian/
+**/.config/QQ/
+**/.config/discord/
+
+# 备份残留
+**/*.bak
+
+# fcitx5 自动生成的键盘布局缓存
+/fcitx5/conf/cached_layouts

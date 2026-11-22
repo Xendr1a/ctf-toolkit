@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# 按 MANIFEST.tsv 把仓库里的配置装回实机。
+# 默认只打印计划；确认无误后加 --apply 才真正写入。
+# root 权限的那些条目永远只打印 sudo 命令，不自己执行。
+set -euo pipefail
+REPO="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
+MANIFEST="$REPO/MANIFEST.tsv"
+APPLY=0
+RESTORE_STATE=0
+for arg in "$@"; do
+  case "$arg" in
+    --apply) [[ "$APPLY" -eq 0 ]] || exit 2; APPLY=1 ;;
+    --restore-state) [[ "$RESTORE_STATE" -eq 0 ]] || exit 2; RESTORE_STATE=1 ;;
+    *) echo '用法：install.sh [--apply] [--restore-state]' >&2; exit 2 ;;
+  esac
+done
+
+[ -f "$MANIFEST" ] || { echo "找不到 $MANIFEST"; exit 1; }
+
+root_cmds=()
+count_user=0
+count_root=0
+greetd_changed=0
+
+while IFS=$'\t' read -r src dst mode desc extra || [[ -n "$src" ]]; do
+  case "${src:-}" in ''|'#'*) continue ;; esac
+  [[ -e "$REPO/$src" && ( "$dst" == '~/'* || "$dst" == /* ) && ( "$mode" == user || "$mode" == root ) ]] || {
+    printf '无效 MANIFEST 条目：%s\n' "$src" >&2
+    exit 1
+  }
+  dst_exp="${dst/#\~/$HOME}"
+  # 状态快照只初始化缺失文件；明确恢复时才覆盖已有 GUI / 输入法选择。
+  if [[ "${extra:-}" == state && "$RESTORE_STATE" -eq 0 && ( -e "$dst_exp" || -L "$dst_exp" ) ]]; then
+    echo "保留  $src  ->  $dst_exp（已有运行状态）"
+    continue
+  fi
+  if [ "$mode" = "root" ]; then
+    count_root=$((count_root+1))
+    if [ -d "$REPO/$src" ]; then
+      printf -v command_line 'sudo cp -a -- %q %q' "$REPO/$src/." "$dst/"
+      root_cmds+=("$command_line")
+    else
+      install_mode=644
+      [[ ! -x "$REPO/$src" ]] || install_mode=755
+      printf -v command_line 'sudo install -Dm%s -- %q %q' "$install_mode" "$REPO/$src" "$dst"
+      root_cmds+=("$command_line")
+      # /etc/greetd 或 /etc/pam.d/greetd 这次要动的话，下面得配一句警告
+      case "$dst" in
+        /etc/greetd/*|/etc/pam.d/greetd)
+          cmp -s "$REPO/$src" "$dst_exp" 2>/dev/null || greetd_changed=1
+          ;;
+      esac
+    fi
+    continue
+  fi
+  count_user=$((count_user+1))
+  if [ "$APPLY" -eq 1 ]; then
+    mkdir -p "$(dirname "$dst_exp")"
+    if [ -d "$REPO/$src" ]; then
+      mkdir -p "$dst_exp"
+      cp -a "$REPO/$src/." "$dst_exp/"
+      echo "copy  $src  ->  $dst_exp/"
+    else
+      cp -a "$REPO/$src" "$dst_exp"
+      echo "copy  $src  ->  $dst_exp"
+    fi
+  else
+    echo "计划  $src  ->  $dst_exp"
+  fi
+done < "$MANIFEST"
+
+echo
+echo "user 条目 $count_user 个，root 条目 $count_root 个。"
+
+if [ "$count_root" -gt 0 ]; then
+  echo
+  echo "===== root 条目（自己跑，需要 sudo） ====="
+  for c in "${root_cmds[@]}"; do echo "$c"; done
+  echo "sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=leds"
+  echo "sudo systemctl daemon-reload"
+fi
+
+if [ "$greetd_changed" -eq 1 ]; then
+  echo
+  echo "===== 这次动了 greetd 的文件，读这段 ====="
+  echo "两个文件都不需要为生效去重启 greetd：/etc/pam.d/greetd 每次认证都重读，"
+  echo "/etc/greetd/config.toml 下次 greetd 起来时读（下次开机即可）。"
+  echo
+  echo "千万别在图形会话里跑 systemctl restart greetd。greeter 会去抢 vt=1，"
+  echo "把当前 niri 会话挤成 inactive：桌面消失但进程还在，再登录会被 niri-session 的"
+  echo "\"A niri session is already running.\" 挡在门外。"
+  echo "真要立刻生效：登出到登录界面之后再重启，或者干脆等下次开机。"
+  echo
+  echo "万一已经踩了：loginctl list-sessions  找到自己那个 seat0 会话号，"
+  echo "  另一块 VT 上跑 loginctl activate <会话号>；同一块 VT 被 greeter 占着就先 sudo systemctl stop greetd。"
+fi
+
+echo
+echo "===== 装完还要自己做的 ====="
+"$REPO/tool/mycfg-post"
+pending=$("$REPO/tool/mycfg-migrate" list || true)
+pkgs=$("$REPO/tool/mycfg-pkgs" check --summary 2>/dev/null || true)
+case "$pkgs" in
+  *'缺 0'*|'') ;;
+  *) echo; echo "$pkgs"; echo "装包命令：tool/mycfg-pkgs install" ;;
+esac
+
+if [ -n "$pending" ]; then
+  printf '%s\n' "$pending"
+  pending_count=0
+  while IFS= read -r migration; do pending_count=$((pending_count+1)); done <<< "$pending"
+  echo "migrations: $pending_count 条待办，跑 tool/mycfg-migrate run --apply"
+fi
+
+if [ "$APPLY" -eq 0 ]; then
+  echo
+  echo "以上只是计划。要落地：$0 --apply"
+fi
