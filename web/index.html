@@ -49,9 +49,16 @@
     <section id="runbar">
       <button id="runBtn" class="primary">▶ 运行</button>
       <button id="stopBtn" class="danger" disabled>■ 停止</button>
+      <span class="vsep"></span>
       <button id="copyBtn" class="ghost">复制命令</button>
-      <button id="exportBtn" class="ghost">导出到 evidence</button>
+      <button id="copyOutBtn" class="ghost">复制输出</button>
+      <button id="exportBtn" class="ghost">导出 evidence</button>
+      <button id="clearOutBtn" class="ghost">清空输出</button>
+      <span class="vsep"></span>
       <label class="toggle"><input type="checkbox" id="follow" checked> 自动滚动</label>
+      <label class="toggle"><input type="checkbox" id="wrap" checked> 换行</label>
+      <span class="spacer"></span>
+      <span id="lines" class="muted"></span>
       <span id="stat" class="muted"></span>
     </section>
 

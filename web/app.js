@@ -34,7 +34,10 @@ async function init() {
   $('stopBtn').onclick = stop;
   $('copyBtn').onclick = () => copy($('cmdline').dataset.cmd || '');
   $('cmdline').onclick = () => copy($('cmdline').dataset.cmd || '');
+  $('copyOutBtn').onclick = () => { const r = activeRun(); if (r) copy(outText(r)); };
+  $('clearOutBtn').onclick = clearOut;
   $('exportBtn').onclick = exportLog;
+  $('wrap').addEventListener('change', e => { $('out').classList.toggle('nowrap', !e.target.checked); $('outwrap').scrollLeft = 0; });
   $('histBtn').onclick = () => { renderHist(); $('history').classList.toggle('hidden'); };
   $('histClose').onclick = () => $('history').classList.add('hidden');
   document.addEventListener('keydown', e => {
@@ -68,7 +71,7 @@ function selectTool(id) {
   S.sel = id;
   const t = S.tools.find(x => x.id === id);
   renderNav();
-  $('tName').textContent = t.name;
+  $('tName').textContent = (t.icon ? t.icon + ' ' : '') + t.name;
   $('tDesc').textContent = t.desc || '';
   const wrap = $('formWrap');
   wrap.innerHTML = '';
@@ -359,6 +362,7 @@ function closeTab(id) {
     else {
       S.active = null;
       $('out').textContent = ''; $('stat').textContent = ''; $('stopBtn').disabled = true;
+      $('lines').textContent = '';
       view.id = null; view.rendered = 0; view.dropped = 0;
       preview();
     }
@@ -398,6 +402,10 @@ function finish(r) {
 function syncRunbar(r) {
   $('stopBtn').disabled = !(r && r.status === 'running');
   $('stat').textContent = r ? `${r.status}${r.rc != null ? ' (rc=' + r.rc + ')' : ''} · ${r.elapsed}s` : '';
+  const cls = ['muted'];
+  if (r && r.status === 'done') cls.push('stat-ok');
+  else if (r && ['failed', 'error', 'killed'].includes(r.status)) cls.push('stat-err');
+  $('stat').className = cls.join(' ');
 }
 
 function updatePill() {
@@ -419,11 +427,26 @@ function pushLines(r, arr) {
   else appendOut(r);
 }
 
+function outText(r) {
+  return (r.dropped ? `… 前面 ${r.dropped} 行未显示（完整日志见导出文件）…\n` : '') + r.lines.join('\n');
+}
+function updateLines(r) {
+  const n = r ? r.dropped + r.lines.length : 0;
+  $('lines').textContent = n ? `${n} 行${r.dropped ? '（+' + r.dropped + ' 未显示）' : ''}` : '';
+}
+function clearOut() {
+  const r = activeRun();
+  if (!r) return;
+  r.lines = []; r.dropped = 0;
+  renderOut(r);
+}
+
 function renderOut(r) {
   const pre = $('out');
   const note = r.dropped ? `… 前面 ${r.dropped} 行未显示（完整日志见导出文件）…\n` : '';
   pre.replaceChildren(document.createTextNode(note + r.lines.join('\n')));
   view.id = r.id; view.rendered = r.lines.length; view.dropped = r.dropped;
+  updateLines(r);
   if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
 }
 
@@ -435,6 +458,7 @@ function appendOut(r) {
   if (!fresh.length) return;
   pre.appendChild(document.createTextNode((view.rendered ? '\n' : '') + fresh.join('\n')));
   view.rendered = r.lines.length;
+  updateLines(r);
   if ($('follow').checked) $('outwrap').scrollTop = $('outwrap').scrollHeight;
 }
 
