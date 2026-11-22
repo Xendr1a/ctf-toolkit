@@ -2,6 +2,7 @@
   --bg:#0e1013; --panel:#15181d; --panel2:#1b1f26; --line:#262c35;
   --fg:#e6e9ef; --muted:#8b94a3; --acc:#4fb3ff; --acc2:#1f6feb;
   --ok:#3ddc84; --warn:#ffb454; --err:#ff6b6b; --mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;
+  color-scheme:dark;   /* 让原生下拉/滚动条/勾选框也走暗色，否则 select 会是系统亮色 */
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
@@ -10,6 +11,12 @@ input,textarea,select,button{font:inherit;color:inherit}
 input,textarea,select{background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:7px 9px;width:100%;outline:none}
 input:focus,textarea:focus,select:focus{border-color:var(--acc2);box-shadow:0 0 0 2px #1f6feb33}
 textarea{resize:vertical;font-family:var(--mono);font-size:12.5px;min-height:60px}
+/* select 默认会让 webkit 用原生亮色控件，关掉 appearance 自绘箭头，配色和其他输入框一致 */
+select{appearance:none;-webkit-appearance:none;padding-right:28px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238b94a3' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center}
+select option{background:var(--panel2);color:var(--fg)}
+input[type=checkbox]{accent-color:var(--acc2)}
 button{cursor:pointer;border-radius:7px;border:1px solid var(--line);background:var(--panel2);padding:8px 14px;transition:.15s}
 button:hover:not(:disabled){border-color:#3a4350;background:#222833}
 button:disabled{opacity:.45;cursor:not-allowed}
