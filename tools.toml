@@ -515,3 +515,137 @@ presets = [
   { label = "带抓取日期", args = "", set = { "0" = "echo {{TARGET}} | waybackurls -dates" } },
   { label = "取前 50 条试试", args = "", set = { "0" = "echo {{TARGET}} | waybackurls | head -50" } },
 ]
+
+# ── 追加：子域/资产枚举 ─────────────────────────────────────────────────────
+[[tool]]
+id = "subfinder"
+name = "subfinder"
+category = "recon"
+icon = "🕵️"
+desc = "子域枚举：聚合 crt.sh/安全引擎/搜索引擎等被动源"
+notes = "目标框自动取域名（填 http://x 也会转成 x）\n-all 用全部源（慢但全）；-recursive 递归；结果丢给 httpx 验存活"
+cmd = ["subfinder"]
+fields = [
+  { flag = "-d", label = "域名", kind = "text", ph = "example.com", req = true, tgt = true },
+  { flag = "-dL", label = "域名列表文件", kind = "text", ph = "domains.txt" },
+  { flag = "-all", label = "-all 全部源", kind = "bool" },
+  { flag = "-recursive", label = "-recursive 递归", kind = "bool" },
+  { flag = "-t", label = "并发", kind = "number", default = "10" },
+  { flag = "-o", label = "输出文件", kind = "text", ph = "subs.txt" },
+  { flag = "-silent", label = "-silent 只输出子域", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "被动枚举", args = "" },
+  { label = "全源递归（慢）", args = "", set = { "-all" = "1", "-recursive" = "1" } },
+]
+
+[[tool]]
+id = "dnsx"
+name = "dnsx"
+category = "recon"
+icon = "🧭"
+desc = "批量 DNS 解析 / 子域爆破：A/AAAA/CNAME 与应答"
+notes = "两种用法：-l 解析已有子域列表；-d + -w 爆破子域\n-d 也自动取目标主机名；结果可 -o 存文件"
+cmd = ["dnsx"]
+fields = [
+  { flag = "-d", label = "域名（爆破模式）", kind = "text", ph = "example.com", tgt = true },
+  { flag = "-w", label = "子域字典（爆破）", kind = "combo", options_from = "wordlists", ph = "字典路径" },
+  { flag = "-l", label = "待解析列表（文件）", kind = "text", ph = "subs.txt" },
+  { flag = "-a", label = "-a A 记录", kind = "bool", default = "1" },
+  { flag = "-aaaa", label = "-aaaa AAAA", kind = "bool" },
+  { flag = "-cname", label = "-cname CNAME", kind = "bool" },
+  { flag = "-re", label = "-re 显示应答", kind = "bool" },
+  { flag = "-t", label = "线程", kind = "number", default = "100" },
+  { flag = "-o", label = "输出文件", kind = "text", ph = "resolved.txt" },
+  { flag = "-silent", label = "-silent 只输出结果", kind = "bool", default = "1" },
+]
+presets = [
+  { label = "解析子域列表", args = "", set = { "-l" = "subs.txt", "-re" = "1" } },
+  { label = "爆破子域", args = "", set = { "-w" = "wordlists/raft-small-words.txt" } },
+]
+
+[[tool]]
+id = "amass"
+name = "amass"
+category = "recon"
+icon = "🌍"
+desc = "OWASP 资产测绘：被动/主动/爆破三合一子域枚举"
+notes = "enum = 枚举；intel = 情报（查关联域名/IP）\n-passive 快但依赖公开源；-active 加证书/端口验证更准"
+cmd = ["amass"]
+fields = [
+  { flag = "", label = "模式", kind = "select", options = ["enum", "intel"], default = "enum" },
+  { flag = "-d", label = "域名", kind = "text", ph = "example.com", req = true, tgt = true },
+  { flag = "-passive", label = "-passive 被动", kind = "bool", default = "1" },
+  { flag = "-active", label = "-active 主动", kind = "bool" },
+  { flag = "-brute", label = "-brute 爆破", kind = "bool" },
+  { flag = "-w", label = "字典（爆破）", kind = "combo", options_from = "wordlists", ph = "字典路径" },
+  { flag = "-o", label = "输出文件", kind = "text", ph = "amass.txt" },
+]
+presets = [
+  { label = "被动枚举", args = "" },
+  { label = "主动+爆破", args = "", set = { "-passive" = "", "-active" = "1", "-brute" = "1", "-w" = "wordlists/raft-small-words.txt" } },
+]
+
+# ── 追加：WAF 识别 / 参数发现 ───────────────────────────────────────────────
+[[tool]]
+id = "wafw00f"
+name = "wafw00f"
+category = "recon"
+icon = "🧱"
+desc = "WAF 识别：检测目标前面挡的是哪款 WAF"
+notes = "识别出 WAF 再决定 sqlmap 的 tamper、nuclei 的绕过方式\n-a 检测所有匹配项；-r 不跟随跳转（有的 WAF 靠跳转伪装）"
+cmd = ["wafw00f"]
+fields = [
+  { flag = "", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-a", label = "-a 检测所有 WAF", kind = "bool" },
+  { flag = "-r", label = "-r 不跟随跳转", kind = "bool" },
+  { flag = "-p", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+]
+presets = [
+  { label = "识别 WAF", args = "" },
+]
+
+[[tool]]
+id = "arjun"
+name = "arjun"
+category = "recon"
+icon = "🎯"
+desc = "隐藏参数发现：爆破 URL 里藏着的 GET/POST 参数"
+notes = "对开了隐藏参数（如 ?debug=1）的接口有奇效\n配合 curl/sqlmap 用发现出来的参数继续测"
+cmd = ["arjun"]
+fields = [
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-m", label = "方法", kind = "select", options = ["", "GET", "POST", "JSON", "XML"] },
+  { flag = "-w", label = "参数字典", kind = "text", ph = "留空用内置 large.txt" },
+  { flag = "-t", label = "线程", kind = "number", default = "5" },
+  { flag = "-oJ", label = "JSON 输出文件", kind = "text", ph = "arjun.json" },
+]
+presets = [
+  { label = "发现参数", args = "" },
+  { label = "POST 参数发现", args = "", set = { "-m" = "POST" } },
+]
+
+# ── 追加：目录爆破增强 ─────────────────────────────────────────────────────
+[[tool]]
+id = "feroxbuster"
+name = "feroxbuster"
+category = "brute"
+icon = "🦀"
+desc = "Rust 目录扫描：递归、状态码过滤、扩展名"
+notes = "-s 只看指定状态码；-x 空格分隔扩展名；-d 递归深度\n比 dirsearch 快，软 404 站点用 -s 过滤"
+cmd = ["feroxbuster"]
+fields = [
+  { flag = "-u", label = "目标 URL", kind = "text", ph = "{{TARGET}}", req = true, tgt = true },
+  { flag = "-w", label = "字典", kind = "combo", options_from = "wordlists", ph = "字典路径" },
+  { flag = "-x", label = "扩展名（空格分隔）", kind = "text", ph = "php html js" },
+  { flag = "-t", label = "线程", kind = "number", default = "50" },
+  { flag = "-d", label = "递归深度", kind = "number", default = "2" },
+  { flag = "-s", label = "只看状态码", kind = "text", ph = "200 301 302 403" },
+  { flag = "-k", label = "-k 忽略证书", kind = "bool" },
+  { flag = "-o", label = "输出文件", kind = "text", ph = "ferox.txt" },
+  { flag = "--proxy", label = "代理", kind = "text", ph = "http://127.0.0.1:7897" },
+]
+presets = [
+  { label = "目录爆破", args = "", set = { "-w" = "wordlists/raft-small-directories.txt", "-s" = "200 301 302 403" } },
+  { label = "递归 + 扩展名", args = "", set = { "-w" = "wordlists/common.txt", "-x" = "php html txt", "-d" = "3" } },
+]

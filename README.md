@@ -4,7 +4,7 @@
 左栏点工具 → 表单填参数 → 「▶ 运行」→ 输出实时流回页面。不用记 flag，命令行可以一键复制回终端。
 
 - 纯本地：只监听 `127.0.0.1`；浏览器模式零依赖（Python 标准库 + `tomllib`），桌面模式用系统 webview（webkit2gtk）
-- 21 个工具 / 4 个分类，专注 Web；每个都带**预设**（列库、拖表、目录爆破、JWT 攻击、SSTI、PHP gadget、爬站…）
+- 27 个工具 / 4 个分类，专注 Web；每个都带**预设**（列库、拖表、目录爆破、JWT 攻击、SSTI、PHP gadget、爬站…）
 - 顶部「目标」框自动填主字段（`{{TARGET}}` 占位符）；逗号/换行分隔可一次打多个目标
 - 输出实时流式显示，可停止、可导出到 `~/ctf/evidence/`
 - 历史记录（近 300 次），点一条即可回看输出
@@ -65,8 +65,9 @@ python3 selftest/smoke.py --keep                # 跑完不关靶站，方便自
 | 分类 | 工具 | 定位 |
 |---|---|---|
 | 探测 | `curl` `whatweb` `httpx` `nmap` | 手工请求、指纹、存活探测、端口 |
-| 探测 | `katana` `waybackurls` | 爬站收集 URL / 从 Wayback 捞历史接口 |
-| 爆破 | `ffuf` `dirsearch` `gobuster` | 目录/子域/参数 |
+| 探测 | `katana` `waybackurls` `subfinder` `dnsx` `amass` | 爬站 / 历史 URL / 子域与资产枚举 |
+| 探测 | `wafw00f` `arjun` | WAF 识别 / 隐藏参数发现 |
+| 爆破 | `ffuf` `dirsearch` `gobuster` `feroxbuster` | 目录/子域/参数 |
 | 漏洞利用 | `sqlmap` `nuclei` `dalfox` | SQLi、模板扫描、XSS |
 | 漏洞利用 | `fenjing` | SSTI（直接打或用 payload 模式） |
 | 漏洞利用 | `jwt_tool` `phpggc` `php_filter_chain` `ysoserial` | JWT、PHP/Java 反序列化、filter chain |
