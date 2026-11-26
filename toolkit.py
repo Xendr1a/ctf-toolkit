@@ -35,6 +35,7 @@ LOGS.mkdir(parents=True, exist_ok=True)
 MAX_LINES = 60000          # 内存里保留的输出行数上限
 DROP_CHUNK = 20000         # 超限时一次丢弃的行数
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07")   # 进度条/颜色码，落库前剥掉
+RUN_ID_RE = re.compile(r"[0-9a-f]{12}")   # Run.id 的形状；同时挡住 replay/export 的路径穿越
 
 CATEGORIES = {
     "recon": "探测",
@@ -385,9 +386,11 @@ class Handler(BaseHTTPRequestHandler):
         path, q = u.path, parse_qs(u.query)
 
         if path in ("/", "/index.html"):
-            return self.static(ROOT / "web" / "index.html")
-        if path.startswith("/web/") or path.startswith("/vendor/"):
-            return self.static(ROOT / path.lstrip("/"))
+            return self.static(ROOT / "web" / "index.html", ROOT / "web")
+        if path.startswith("/web/"):
+            return self.static(ROOT / "web" / path[len("/web/"):], ROOT / "web")
+        if path.startswith("/vendor/"):
+            return self.static(ROOT / "vendor" / path[len("/vendor/"):], ROOT / "vendor")
 
         if path == "/api/state":
             cfg = reload_config()
@@ -407,13 +410,18 @@ class Handler(BaseHTTPRequestHandler):
             run = RUNS.get(q.get("id", [""])[0])
             if not run:
                 return self.j({"error": "no such run"}, 404)
-            idx = int(q.get("from", ["0"])[0])
+            try:
+                idx = max(0, int(q.get("from", ["0"])[0]))
+            except ValueError:
+                return self.j({"error": "from 必须是非负整数"}, 400)
             new, nxt = run.slice_from(idx)
             return self.j({"lines": new, "next": nxt, "status": run.status,
                            "rc": run.rc, "elapsed": round(run.elapsed, 1)})
 
         if path == "/api/replay":
             rid = q.get("id", [""])[0]
+            if not RUN_ID_RE.fullmatch(rid):
+                return self.j({"error": "无效的 run id"}, 400)
             p = LOGS / f"{rid}.log"
             if not p.exists():
                 return self.j({"error": "日志已不存在"}, 404)
@@ -484,8 +492,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.j({"ok": True, "stopped": stopped})
 
         if path == "/api/export":
-            run = RUNS.get(str(d.get("id")))
-            rid = str(d.get("id"))
+            rid = str(d.get("id") or "")
+            if not RUN_ID_RE.fullmatch(rid):
+                return self.j({"error": "无效的 run id"}, 400)
+            run = RUNS.get(rid)
             src = run.log_path if run else LOGS / f"{rid}.log"
             if not src.exists():
                 return self.j({"error": "日志不存在"}, 404)
@@ -498,17 +508,18 @@ class Handler(BaseHTTPRequestHandler):
 
         return self.j({"error": "not found"}, 404)
 
-    def static(self, p: Path):
+    def static(self, p: Path, base: Path):
+        base = base.resolve()
         try:
             p = p.resolve()
-        except OSError:
+            if p.is_dir():
+                p = (p / "index.html").resolve()   # 追加后必须重新 resolve，符号链接 index 也要落回 base
+        except (OSError, ValueError):
             return self.j({"error": "not found"}, 404)
-        # 用 is_relative_to 而不是 startswith：后者对 "ROOT 名字前缀" 的同级目录会误判放行
-        if not p.is_relative_to(ROOT):
+        # 用 is_relative_to 而不是 startswith：后者对「名字前缀相同」的同级目录会误判放行
+        if not p.is_relative_to(base):
             return self.j({"error": "forbidden"}, 403)
         try:
-            if p.is_dir():
-                p = p / "index.html"
             data = p.read_bytes()
         except (OSError, ValueError):
             return self.j({"error": "not found"}, 404)
