@@ -62,12 +62,16 @@ else
 fi
 
 # OCR 管线端到端：造一张带字的图，验证语言包和 psm 组合真能识别
-if command -v tesseract >/dev/null 2>&1 && command -v magick >/dev/null 2>&1; then
+# 必须显式给 -font：ImageMagick 的默认字体来自 type.xml，很多机器上为空，
+# 空字体名会直接报 unable to read font `' 而让用例假失败
+ocr_font=
+if command -v tesseract >/dev/null 2>&1 && command -v magick >/dev/null 2>&1 &&
+  ocr_font=$(magick -list font 2>/dev/null | sed -n 's/^ *Font: //p' | head -1) && [[ -n "$ocr_font" ]]; then
   img="$tmp/ocr.png"
-  magick -size 640x140 xc:white -pointsize 42 -fill black -annotate +30+85 'FLAG ocr region test' "$img"
+  magick -size 640x140 xc:white -font "$ocr_font" -pointsize 42 -fill black -annotate +30+85 'FLAG ocr region test' "$img"
   out=$(tesseract "$img" - -l chi_sim+eng --psm 6 2>/dev/null) || fail 'tesseract 能处理测试图'
   grep -q 'FLAG' <<< "$out" || fail 'OCR 识别出英文关键字' "$out"
   pass 'OCR 识别出英文关键字'
 else
-  skip 'OCR 管线端到端' '缺少 tesseract 或 magick'
+  skip 'OCR 管线端到端' '缺少 tesseract / magick 或可渲染字体'
 fi
