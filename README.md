@@ -1,127 +1,275 @@
-# CTF Toolkit
+# My_config
 
-本地 Web/CTF 工具台：把分散在 `~/.local/bin`、`~/ctf/tools`、Docker 镜像里的命令行工具收进一个界面。左栏选工具 → 填参数 → 运行 → 输出实时流回页面，命令行可一键复制回终端。提供 Tauri 桌面窗口与纯浏览器两种模式。
+这台 ThinkPad T14 Gen4 (AMD) 上 Arch + niri + Noctalia 的配置留档，附带本机在用的 CTF 工具箱（见 [CTF Toolkit](#ctf-toolkit)）。
 
-## 特性
+## 预览
 
-- 纯本地：仅监听 `127.0.0.1`。浏览器模式零第三方依赖（Python 标准库 + `tomllib`），桌面模式使用系统 WebView。
-- 27 个工具 / 4 个分类，专注 Web，均带预设（列库、目录爆破、JWT 攻击、SSTI、PHP/Java 反序列化等）。
-- 顶部「目标」框自动填充主字段（`{{TARGET}}` 占位符）；逗号/换行分隔可一次运行多个目标。
-- 多任务并行：每个 run 一个标签页，独立轮询/缓冲；关闭运行中的标签即停止；历史记录可回放。
-- 输出实时流式显示，支持停止、停止全部、复制、导出到 `~/ctf/evidence/`、查找高亮。
-- 内置离线 CyberChef 与常用字典。
-- `tools.toml` 热重载：存盘即生效，无需重启。
+![预览图片.jpg](./预览图片.jpg)
 
-## 安装与启动
+仓库布局：
 
-### 桌面模式（推荐）
+| 路径 | 内容 |
+|---|---|
+| 顶层目录（`niri/`、`alacritty/`、`noctalia/`…） | 镜像 `~/.config/` 下的同名子目录 |
+| `home/` | 家目录点文件（`.zshrc`、`.gitconfig`、`.gdbinit`…） |
+| `system-files/` | `/etc` 与 `/usr/local` 下手工改过的文件 |
+| `archive/` | 已退役方案，只作历史留档，不要部署 |
+| `tools/check-sync.sh` | 比对仓库与实机，只读 |
+| `packages/` | 重装时要装的包清单（official / foreign） |
+| `migrations/` | 一次性状态修复脚本 |
+| `test/` | 本地测试集 |
+| `MANIFEST.tsv` | 仓库路径 ↔ 安装路径映射，安装与校验脚本都读它 |
+| `toolkit.py`、`tools.toml`、`web/` | CTF 工具箱：服务端、工具注册表、前端 |
+| `src-tauri/`、`scripts/`、`bin/` | 工具箱的桌面壳、构建与启动脚本 |
+| `selftest/` | 工具箱自测 |
+| `docs/` | 说明文档（`toolkit.md`、`manggo.md`） |
+
+## CTF Toolkit
+
+把分散在 `~/.local/bin`、`~/ctf/tools`、Docker 镜像里的命令行工具收进一个本地界面：左栏选工具 → 填参数 → 运行 → 输出实时流回页面，命令行可一键复制回终端。27 个工具 / 4 个分类，`tools.toml` 热重载，服务只监听 `127.0.0.1`；提供 Tauri 桌面窗口与纯浏览器两种模式。
 
 ```bash
-npm install                     # 安装 @tauri-apps/cli（仅构建期）
-npx tauri build                 # 生成 src-tauri/target/release/ctf-toolkit
-bash scripts/install-desktop.sh # 软链到 ~/.local/bin + 应用菜单入口
+bash scripts/fetch-vendor.sh   # 字典与离线 CyberChef（约 80MB，不进 git）
+ln -sf "$PWD/bin/toolkit" ~/.local/bin/toolkit
+toolkit                        # 浏览器模式：http://127.0.0.1:8787/
 ```
 
-由应用菜单或 `ctf-toolkit` 启动。壳自动启动 Python 后端（内核分配端口）；关闭窗口、Ctrl-C 或 kill 均会回收后端。指向其他仓库可用 `TOOLKIT_ROOT=/path/to/repo`。单实例锁防止重复启动。
+桌面壳另需 `npm install && npx tauri build`，再跑 `bash scripts/install-desktop.sh` 装入口。安装细节、工具清单、`tools.toml` schema、自测与已知限制见 [docs/toolkit.md](docs/toolkit.md)。
 
-构建依赖：Rust ≥ 1.77、Node.js、webkit2gtk-4.1 / gtk3 / libsoup3。
+## 当前环境
 
-### 浏览器模式
+- 合成器 **niri 26.04**（滚动式列布局）；桌面 Shell **Noctalia v5**（`extra/noctalia`，二进制 `noctalia`）
+- 登录器 **greetd + noctalia-greeter**（`/etc/greetd/config.toml`），`sddm` 已 disabled
+- 显示：内屏 `eDP-1` 2240x1400@60.002 scale 1.166667（`position x=2560`）；外接 `DP-1` HKC G27H2Max 2560x1440@200 scale 1（`position 0,0`）；热插拔切换交给 kanshi
+- 默认终端 Foot，使用 Alacritty 同款 CaskaydiaCove Nerd Font Mono 11 pt、Noctalia 配色、85% 背景不透明度和模糊；shell zsh + oh-my-zsh（`/usr/share/oh-my-zsh`）+ powerlevel10k
+- 输入法 fcitx5，当前默认 `pinyin`；X11/Java 应用走 xwayland-satellite
+- 代理统一 `127.0.0.1:7897`（Clash Verge）；防火墙 firewalld（`nftables.service` 未启用）
 
-```bash
-bash scripts/fetch-vendor.sh   # 拉取字典与离线 CyberChef（约 80MB，不进 git）
+## 键位速查
 
-toolkit                        # 启动服务并打开浏览器（默认 http://127.0.0.1:8787/）
-toolkit --port 9000            # 指定端口
-toolkit --no-browser           # 仅启动服务
+niri（`Super` 即 Mod）：
+
+| 键 | 作用 |
+|---|---|
+| `Mod+E` | 打开 Nautilus 文件管理器 |
+| `Mod+T` | 打开 Foot |
+| `Mod+D` / `Mod+B` | Noctalia 启动器 / 剪贴板面板 |
+| `Super+Alt+L` | 锁屏；`Mod+O` overview |
+| `Mod+H/J/K/L` | 焦点：左/下/上/右（加 `Ctrl` 变成移动） |
+| `Mod+,` / `Mod+.` | 把右侧窗口并入当前列 / 把列底部窗口弹出为新列 |
+| `Mod+[` / `Mod+]` | 上面两个动作的"智能版"：唯一窗口时并入相邻列，列里多窗口时把它拆出去 |
+| `Mod+R` / `Mod+Shift+R` | 切换列宽 / 窗高预设；`Mod+F` maximize 列 |
+| `Mod+V` 浮动、`Mod+W` 列内 tab 切换、`Mod+Q` 关窗 | |
+| `Mod+Shift+E` / `Ctrl+Alt+Delete` | 退出 niri 会话；配置修改由 niri 自动重载 |
+| `Mod+Shift+S` | 区域截图 → satty 标注，Enter 复制并存盘到 `~/Pictures/Screenshots` |
+| `Mod+Shift+O` | 区域截图 → tesseract OCR（中英）→ 剪贴板 |
+| `Mod+A` / `Mod+S` / `Mod+Shift+A` | Manggo 选词翻译 / 截图翻译 / 输入翻译（自动启动，无需在应用内注册热键） |
+| `Print` / `Ctrl+Print` / `Alt+Print` | niri 内置：选区 / 整屏 / 窗口，直接进剪贴板 |
+
+媒体键 `Ctrl+Alt+Left/Right` 或 `XF86AudioPrev/Next`，亮度走 `noctalia msg brightness-up/down`（不再用 brightnessctl）。
+
+截图分两套：`Print` 系走 niri 内置，快，适合立刻要图；`Mod+Shift+S` 和 `Mod+Shift+O` 的选区也走 niri 截图 UI（选区期间冻结画面，grim + slurp 是实时画面，不冻结），选完再由 satty 标注或 tesseract 识别。`Mod+Shift+S` 存盘到 `~/Pictures/Screenshots`，只保留最近 200 张（`SCREENSHOT_KEEP` 可改，0 = 不清理），niri 自带 `Print` 存的图也计入。脚本在 `local/bin/screenshot-annotate`、`local/bin/ocr-region`。
+
+Manggo 的截图快捷键通过本地 Tesseract 识别选区。应用内截图使用 wlr Portal，屏幕共享使用 GNOME 后端。 [Manggo 安装与故障处理](docs/manggo.md)
+
+tmux：前缀 `Ctrl+x`（连按两次透传字面 `Ctrl+x`；另有兼容前缀 `Ctrl+b`）。新建窗口 `Ctrl+x` `c`，横向分割 `-`，纵向 `|`。默认开鼠标，选中即复制到系统剪贴板。
+
+nvim：
+
+`<leader>` 是空格。以下快捷键在普通模式使用：编辑后先按 `Esc`，再依次按空格和后续键（默认两键间隔不超过一秒，无需按住空格）。
+
+| 类别 | 键 |
+|---|---|
+| 基础 | `t` 开关目录树，`<leader>e` 打开或聚焦目录树，`1`-`9` 切 buffer，`gt`/`gT` 下一个/上一个，`w`/`q` 保存/退出，`<C-_>` 注释，`<Esc>` 清搜索高亮 |
+| 窗口 | `<C-h/j/k/l>` 移到左/下/上/右窗口；`<leader>ww` 循环切换，`<leader>ws`/`<leader>wv` 横分/竖分，`<leader>wc` 关闭，`<leader>wo` 只留当前窗口，`<leader>w=` 等宽等高 |
+| 模糊搜索 | `<leader>ff` 文件名，`<leader>fs` 全局搜内容，`<leader>fb` buffer，`<leader>fh` 最近文件，`<leader>fg` git 改动 |
+| LSP | `gd` 定义，`gr` 引用，`K` 悬停，`<leader>rn` 重命名，`<leader>ca` code action，`<leader>af` 格式化，`[g`/`]g` 诊断 |
+| Git | `gn`/`gp` 上下 hunk，`<leader>gb` blame，`<leader>gp` 预览，`<leader>gr` 重置 |
+
+Orca 内的 `Ctrl+W` 会关闭应用标签页，窗口操作使用上面的 `<leader>w…`；例如 `Esc` → 空格 → `e` 可从文件回目录树，树已关闭时也会打开。
+
+补全 nvim-cmp + pyright；保存时 conform.nvim 调 black + isort；诊断只显示 ERROR。Markdown / rst / diff 不做全局行尾空白清理，保留有语义的空格。
+
+## 终端与文件浏览
+
+- `Super+T` 打开 Foot。字体、透明度和模糊设置在 [`foot/foot.ini`](foot/foot.ini)，导入的 Noctalia 配色独立管理。安装时只在缺失的情况下初始化配色文件，之后由 Noctalia 更新。
+- 交互式 Zsh 有 `eza` 时，`ls` 显示表头、颜色和 Nerd Font 图标，目录优先。`la` 含隐藏项，`ll` 还显示 `.` 和 `..`。`command ls` 可以直接使用 GNU `ls`。
+- `Ctrl+T` 用 `fzf` 搜文件和目录。文件右侧预览前 200 行，使用 `bat` 高亮，目录则显示内容列表。已打开的 tmux 窗格用 `source ~/.zshrc` 加载更新。
+- `fuck` 在第一次调用时初始化。Oh My Pi 的 `omp` 补全优先用软件包提供的版本。
+- `git diff` 在交互终端用 Delta 显示行号，终端宽度达到 120 列时左右对照。Git 会查找 `PATH` 和 `~/.local/bin/delta`，找不到时输出原始差异。
+- `Super+E` 打开 Nautilus，用侧栏查看、挂载和弹出可移动设备，也支持鼠标拖拽。需要在终端浏览时可以运行 `yazi`，`s` 搜文件名，`Shift+S` 搜文件内容。
+
+## 装机
+
+```shell
+# 1. 装包
+sudo pacman -S niri noctalia kanshi greetd extra/noctalia-greeter xwayland-satellite foot nautilus tmux neovim \
+               zsh fcitx5 fcitx5-chinese-addons fcitx5-qt fcitx5-gtk \
+               swaybg firejail pwndbg qt6ct ttf-cascadia-code-nerd eza fzf bat git-delta
+# 非官方仓库：oh-my-zsh-git（提供 /usr/share/oh-my-zsh）、fuck（= thefuck）
+# powerlevel10k / zsh-autosuggestions / zsh-syntax-highlighting 放在 ~/.oh-my-zsh/custom/（git clone）
+
+# 2. 取仓库并安装
+git clone https://github.com/Mel-SRK/My_config && cd My_config
+./install.sh            # 只打印计划
+./install.sh --apply    # 真正写入（root 条目仍只打印 sudo 命令）
+
+# 3. 收尾
+./tool/mycfg-post           # 从 MANIFEST 打印后续步骤
+./tool/mycfg-post --apply   # 在用户图形会话中执行，修复权限与 tmux 链接，并在支持时关闭 GTK 最近文件记录。systemctl 命令仍需自己跑
 ```
 
-换机器/新克隆：`ln -sf "$PWD/bin/toolkit" ~/.local/bin/toolkit`。
+`install.sh` 不会碰 `archive/`。装完想确认有没有漏同步：
+
+```shell
+./tools/check-sync.sh          # 全量
+./tools/check-sync.sh niri     # 只看匹配项
+```
+
+安装默认保留 MANIFEST 中标记为 `state` 的已有文件（Noctalia settings、fcitx5 profile），缺失时才初始化。只有明确恢复留档状态时才用 `./install.sh --apply --restore-state`；该选项会覆盖现有状态。
+
+`environment.d/` 里的变量要重新登录才对 niri 启动的应用生效。
+
+greetd 的两个文件（`/etc/greetd/config.toml`、`/etc/pam.d/greetd`）装完都不需要重启 greetd：前者在 greetd 下次启动时读，后者每次认证都重读一遍。**不要在图形会话里跑 `systemctl restart greetd`** —— greeter 会去抢 `vt = 1`，把当前 niri 会话挤成 inactive：桌面消失、进程还在，再登录会被 `niri-session` 的 `A niri session is already running.` 挡在门外。真要立刻生效，等登出到登录界面之后再重启。万一已经踩了：`loginctl list-sessions` 找到自己那个 seat0 会话，切到另一块 VT 跑 `loginctl activate <会话号>`；同一块 VT 被 greeter 占着就先 `sudo systemctl stop greetd`。
+
+## 迁移
+
+`tool/mycfg-migrate list` 列出待办（无待办时退出码为 3），`tool/mycfg-migrate run` 只打印计划，
+确认后用 `tool/mycfg-migrate run --apply` 严格按顺序执行。安装不会自动执行迁移。
+成功的迁移在 `${XDG_STATE_HOME:-$HOME/.local/state}/my_config/migrations` 下记录 marker；
+可用 `MYCONFIG_STATE_DIR` 覆盖整个目录。失败不记 marker，并停止后续迁移。
+配置退役后需要清理旧路径、或有一次性状态修复时写一条迁移，遵守 [迁移约定](migrations/README.md)。
 
 ## 测试
 
+运行 `./test/run` 执行 `test/cases/` 下的本地用例；`./test/run --host` 额外检查实机漂移。
+可以用 `./test/run --filter manifest` 筛选文件名。失败时看输出中的日志路径，
+每个用例的完整 stdout/stderr 都保留在打印的日志目录中。
+
+CTF 工具箱的自测单独跑（`python3 -m unittest discover -s selftest -t .`、`python3 selftest/smoke.py`），见 [docs/toolkit.md](docs/toolkit.md)。
+
+## 软件包
+
+`packages/official.txt` 是官方仓库的显式安装，`packages/foreign.txt` 是 AUR 或手工编译的，
+只记包名不记版本。三档用法：
+
 ```bash
-python3 -m unittest discover -s selftest -t .   # 单元测试
-python3 selftest/smoke.py                       # 端到端链路（本地 PHP 靶站）
+./tool/mycfg-pkgs check            # 缺哪些、哪些装了但没记录
+./tool/mycfg-pkgs write --apply    # 按当前机器重写清单（默认只预览 diff）
+./tool/mycfg-pkgs install          # 打印补齐命令，不执行
 ```
 
-CI（GitHub Actions）在每次 push 时运行单元测试、JS 语法检查与 Rust 格式检查。
+换机器或重装时，先按说明安装 Manggo 1.3.9，再运行 `tool/mycfg-pkgs install` 并执行它打印的装包命令。最后运行 `./install.sh`，脚本结尾会提示缺包数量。 [Manggo 安装说明](docs/manggo.md)
 
-## 工具清单
+这台机器的 `eza` 和 `delta` 目前位于 `~/.local/bin`，来自校验过的 Arch 官方包。`mycfg-pkgs check` 通过 pacman 查询软件包，因此这两个用户级安装仍显示为缺包。重装时可按清单安装官方软件包，由 pacman 管理更新。
 
-| 分类 | 工具 | 定位 |
+## 外接显示器（kanshi）
+
+| profile | 触发 | 结果 |
 |---|---|---|
-| 探测 | `curl` `whatweb` `httpx` `nmap` `katana` `waybackurls` `subfinder` `dnsx` `amass` `wafw00f` `arjun` | 手工请求、指纹、存活探测、爬站、历史 URL、子域资产、WAF 识别、隐藏参数 |
-| 爆破 | `ffuf` `dirsearch` `gobuster` `feroxbuster` | 目录 / 子域 / 参数 |
-| 漏洞利用 | `sqlmap` `nuclei` `dalfox` `fenjing` `jwt_tool` `phpggc` `php_filter_chain` `ysoserial` | SQLi、模板扫描、XSS、SSTI、JWT、PHP/Java 反序列化 |
-| 本地/辅助 | `静态服务` `nc 监听` `自由命令` `CyberChef` | 起站、收 shell、任意命令、编解码 |
+| `docked-dp1` | 插上 DP-1 | `eDP-1` 关闭，`DP-1` 2560x1440@200 scale 1 |
+| `docked-dp2` | 插上 DP-2 | 双屏：DP-2 在左 200Hz，eDP-1 在右 scale 1.166667 |
+| `mobile` | 拔掉全部外接屏 | `eDP-1` 2240x1400@60.002 scale 1.166667 |
 
-工具本体不迁移，`tools.toml` 仅记录调用方式。
+`mobile` 里必须显式写 `enable`，否则 kanshi 匹配到了却无法重新启用被关过的 `eDP-1`。kanshi 判断的是物理连接状态：DP-1 接线保持 docked-dp1，DP-2 接线保持 docked-dp2，外接全部拔掉才回 mobile。
 
-## 添加工具
+刷新率在 niri `output` 块和 kanshi profile 里各写一份，两处必须一致；不一致会看到启动后被反复切换。
 
-在 `tools.toml` 追加条目即可，无需改代码：
+## Noctalia v5
 
-```toml
-[[tool]]
-id = "nikto"
-name = "nikto"
-category = "vuln"          # recon / brute / vuln / local
-icon = "🕵️"
-desc = "经典 Web 扫描器"
-notes = "-Tuning 调整测试项；-ssl 走 https"
-cmd = ["nikto"]
-fields = [
-  { flag = "-h", label = "目标", kind = "text", ph = "{{TARGET}}", tgt = true },
-  { flag = "-Tuning", label = "测试项", kind = "text", ph = "123b" },
-  { flag = "-ssl", label = "-ssl", kind = "bool" },
-]
-presets = [ { label = "常规扫描", args = "-h {{TARGET}} -Tuning 123b" } ]
+- 启动：niri `spawn-at-startup "noctalia"`；IPC 一律 `noctalia msg ...`（旧的 `qs -c noctalia-shell ipc call ...` 已失效）
+- niri 启动时也运行 `swaybg` 来显示兜底壁纸，避免等待 Noctalia 加载时看到黑屏。换机器时把 [`niri/config.kdl`](niri/config.kdl) 里的图片路径改为实机路径。
+- `~/.config/noctalia/config.toml`：声明式配置——backdrop、启动器/剪贴板面板里把 Tab 映射到 Up/Down
+- `~/.local/state/noctalia/settings.toml`：运行时状态，**优先级高于 config.toml**。GUI 里改任何设置（换壁纸、调动画、开关组件）都会整份重写它，所以它一直在漂。改完设置同步进仓库：
+
+  ```shell
+  cp ~/.local/state/noctalia/settings.toml noctalia/settings.toml
+  ```
+
+- overview 背景要 `backdrop.enabled=true`（config 和 state 两处都要）+ niri 里 `match namespace="^noctalia-backdrop"`
+- 声明式的值"不生效"时，先 grep state 那份
+
+## 输入法
+
+fcitx5。`fcitx5/profile` 的留档默认输入法是 `pinyin`，该文件按运行状态管理，普通安装保留实机已有选择；不再收录 `conf/cached_layouts` 缓存。切换键 `Ctrl+Shift`，另绑 `Alt+Shift`。
+云拼音已开启，配置为 `fcitx5/conf/pinyin.conf` 中的 `CloudPinyinEnabled=True`；拼音、繁简转换和标点配置按实机留档。
+环境变量在 `/etc/environment`：`QT_IM_MODULE` / `SDL_IM_MODULE` / `GLFW_IM_MODULE` / `XMODIFIERS`；`GTK_IM_MODULE` 是注释掉的——GTK 应用走原生 text-input，不需要它。
+
+## GTK / Electron 暗色
+
+`gtk-3.0/settings.ini` 与 `gtk-4.0/settings.ini` 用 `Adwaita` + `prefer-dark`，`environment.d/gtk-dark.conf` 再给 `GTK_THEME=Adwaita:dark`。
+
+不要写成 `Adwaita-dark`：Electron 会把它当亮色主题，Obsidian / Sidra 就会变白（本机也没装 `gnome-themes-extra`，这个名字没有对应主题目录）。gsettings 里是 `gtk-theme='Adwaita'`、`color-scheme='prefer-dark'`。
+
+## system-files（/etc 与 /usr/local）
+
+只收手工改过、重装系统不会自动生成的东西：
+
+- `/etc/greetd/config.toml` — greeter 命令与会话用户（`vt=1`、`noctalia-greeter-session`）
+- `/etc/environment` — 输入法环境变量
+- `/etc/pacman.conf` — multilib、blackarch（清华镜像 + `Required DatabaseOptional TrustedOnly`）、archlinuxcn、arch4edu（后两者继承全局签名策略）
+- `/etc/pam.d/greetd` — 末尾追加的 `pam_gnupg` 段（登录时把密码预置给 session 阶段，供 gpg-agent 自动解锁）
+- `/etc/systemd/system/clash-verge-service.service`、`/etc/systemd/system/kvm-nat-bypass-routes.service` + `/usr/local/sbin/kvm-nat-bypass-routes.sh`（后者用 `ip rule` 8800/8900 让 `192.168.122.0/24` 的 VM 流量绕开 mihomo TUN）
+- `/etc/udev/rules.d/50-nuphy.rules`、`50-vgn-mouse.rules`、`90-micmute-led.rules`
+
+**故意没收**：`/etc/fstab`、`/etc/kernel/cmdline`、`/etc/mkinitcpio.d/linux.preset`、`/etc/mkinitcpio.conf`、`/etc/locale.conf`、`/etc/vconsole.conf` —— 装系统时生成，而且夹带 UUID / PARTUUID 这类本机指纹，备份它们对恢复没有价值（换盘就变），需要时重装时重写即可。`/etc/nftables.conf` 也没收：本机 `nftables.service` 是 disabled + inactive，实际生效的是 firewalld。
+
+## 麦克风静音 LED
+
+ThinkPad Fn+麦克风键默认的 `audio-micmute` trigger 状态不同步，这里用脚本盯 PipeWire 事件手动控 LED：`micmute-led/micmute-led-sync.sh`（装到 `~/.local/bin/`）+ user 服务 + udev 规则。
+
+前提：用户在 `input` 组。踩过的两个坑：
+
+- udev 的 `GROUP=` / `MODE=` 只对 `/dev/` 节点生效，`/sys` 下的 sysfs 属性（LED 的 brightness）必须用 `RUN+=/usr/bin/chmod` + `RUN+=/usr/bin/chgrp`
+- systemd 的 `StartLimitIntervalSec` 必须写在 `[Unit]` 段，写在 `[Service]` 会被忽略
+
+## Java / X11 应用
+
+`environment.d/java-awt.conf` 给 `_JAVA_AWT_WM_NONREPARENTING=1`（niri 这种非重父化合成器下防 Swing 窗口空白），`environment.d/xwayland-satellite.conf` 给 `DISPLAY=:0`，让 HMCL 这类还依赖 X11 的程序找到 xwayland-satellite。
+
+## CTF 样本沙箱（ctfdbg / ctfrun）
+
+跑来路不明的二进制（题目附件、别人的 exp、AWD 里对手放的样本）等于把家目录、密钥、网络身份一起交出去。这两个是 firejail 包装器，默认只让样本看到它所在的当前目录。
+
+```shell
+cd ~/samples/bin/<题目>       # 必须先在样本目录里，别在 ~ 下跑
+ctfdbg demo                   # 沙箱里用 pwndbg 调试（裸文件名自动补 ./）
+ctfdbg demo -ex 'b *main'     # 后面的参数原样传给 gdb
+ctfrun ./chall                # 直接跑样本
+ctfrun python3 exp.py         # 跑 exp
+ctfrun bash                   # 进沙箱内部看：mount / capsh --print / ls -a ~
+ctfrun -n ./chall             # 放开网络（用你的 IP 出去）
 ```
 
-校验语法后刷新页面即生效（热重载）：
+同一用户在同一实际目录（按 `pwd -P` 解析软链接）、同一联网模式下，`ctfrun` 和 `ctfdbg` 会自动复用同一个具名沙箱；不同目录或不同联网模式使用独立沙箱。跨终端附加时，直接使用 exp 打印的沙箱内 PID：
 
-```bash
-python3 -c "import tomllib;d=tomllib.load(open('tools.toml','rb'));print(len(d['tool']),'tools ok')"
+```shell
+# 终端 1：进入题目目录，启动 exp，保持目标进程存活（可在 process() 后 pause()）
+ctfrun python3 ./exp_32_m.py
+
+# 终端 2：进入同一题目目录，PID 以 exp 实际输出为准
+ctfdbg -q -p 9
 ```
 
-字段说明：
+需要联网时两个命令都加 `-n`；默认断网命令不会加入联网沙箱。最后一个进程退出后沙箱结束，下次自动新建。升级前已运行的旧沙箱需要退出后重开。共享沙箱解决 PID 可见性，附加仍需满足系统 ptrace 权限。
 
-- `kind`：`text` / `textarea` / `select`(`options`) / `bool`(`default="1"` 勾上) / `combo`(`options_from="wordlists"`) / `number`。
-- `flag` 留空 = 位置参数；`repeat = true` = 一行一个参数；`tgt = true` = 顶部目标自动填充（一个工具只标一个）。
-- 管道/重定向用 `mode = "shell"` + 一个 `raw = true` 字段。
-- `ok_codes = [0, 64]` 指定视为成功的退出码；`strip_proxy = true` 丢弃环境代理（内置 httpx 的 Python 工具用）。
+| 参数 | 作用 | 代价 / 注意 |
+|---|---|---|
+| `--whitelist=$(pwd)` | 家目录换成空 tmpfs，只挂当前目录 | 看不到 `~/.ssh`、`~/.hermes`、`~/Documents` |
+| `--net=none`（默认） | 只留 loopback，需要联网时加 `-n` | 断网 |
+| `--private-tmp` / `--private-dev` | 私有 `/tmp`、精简 `/dev` | 样本写的临时文件退出即消失 |
+| `--nodbus` | 不给 session dbus | 剪贴板 / 通知 / secret service 都用不了 |
+| `--nosound` `--no3d` | 无音频 / 3D 设备 | — |
+| `--caps.drop=all` / `--nonewprivs` / `--seccomp` | 丢能力、禁提权、拦危险 syscall | 极少数样本会被拦，属正常 |
+| `--rlimit-nproc=2000` | 进程数上限 | 防 fork 炸弹拖死机器 |
+| `--allow-debuggers` | 放行 ptrace | 必须开，否则 gdb 用不了 |
 
-完整 schema 见 `tools.toml` 文件头注释。
+zsh 补全在 `local/completions/_ctfrun`（两个脚本共用，靠 `#compdef ctfrun ctfdbg`）。按脚本自己的解析顺序给候选：命令之前只补 `-n/--net/--no-net/-h/--help`，第一个词补当前目录里可执行的文件 + PATH 里的外部命令（`ctfrun python3 exp.py`），再往后原样透传只补文件名——`ctfrun ./chall -n` 里那个 `-n` 是给样本的，所以不会当自己的选项补出来。
 
-## 目录
+系统目录（`/usr` `/lib` `/etc`）仍可见但只读——动态链接的程序必须读到 libc / ld.so 才能跑，把它们也藏起来程序根本起不来。
 
-```
-toolkit.py        # 服务端：注册表加载、命令拼装、进程管理、HTTP/API
-tools.toml        # 工具注册表
-web/              # 前端（原生 JS，无构建步骤）
-wordlists/        # 字典（gitignored，fetch-vendor.sh 拉取）
-vendor/cyberchef/ # 离线 CyberChef（gitignored）
-scripts/          # fetch-vendor.sh / install-desktop.sh
-src-tauri/        # Tauri 桌面壳
-selftest/         # 自测
-bin/toolkit       # 启动器
-```
+安全性边界：和 docker 同一批内核机制（namespace + seccomp + caps），**挡不住内核 0day**；当前目录可写，别把唯一原件放进去跑；联网档下样本以你的网络身份对外发流量。
 
-运行日志落在 `~/.local/state/ctf-toolkit/logs/`，导出复制到 `~/ctf/evidence/<工具>/`。
+## Hermes gateway
 
-## 说明
-
-- **安全**：服务仅绑定 `127.0.0.1`（绑定其他地址需显式 `--allow-remote`）；POST 要求 `X-Requested-By: toolkit` 头并校验 `Origin`，防止跨站调用本地接口。请勿对外暴露。
-- **仅限授权目标**。
-- **热重载**：`tools.toml` 按 mtime 重读；解析失败则告警并继续使用旧配置。
-- **状态清理**：运行日志保留最近 200 个；`history.jsonl` 超 400 条裁剪到 300；内存最多 40 个 run；同时最多 20 个进程在跑。
-- **桌面壳**：窗口加载后端回环端口，安全模型与浏览器模式一致；壳只负责进程生命周期。二进制搬出仓库时从可执行文件目录向上查找 `tools.toml`，找不到用 `TOOLKIT_ROOT` 指定。
-
-## 已知限制
-
-| 事项 | 现状 |
-|---|---|
-| 无鉴权 | 仅靠回环 + 自定义头；同一台机器上的本地进程均可调用 API |
-| 输出仅本地 | 未自动汇总命中结果成 writeup，导出为原始日志 |
-| 无 worker 复用 | 多目标起多个独立进程，不共享 worker |
+`systemd/user/hermes-gateway.service` 与 `.d/` 的四个 drop-in 均由 MANIFEST 管理：launch.conf 使用 `/usr/bin/hermes` wrapper，proxy.conf 配置 7897 代理，computer-use-wayland.conf 启用 Wayland，override.conf 保留 `OOMPolicy=continue`。
