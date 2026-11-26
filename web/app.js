@@ -48,7 +48,23 @@ async function init() {
   $('findNext').onclick = () => gotoMatch(1);
   $('findPrev').onclick = () => gotoMatch(-1);
   $('findClear').onclick = () => { S.find = ''; $('find').value = ''; S.findIdx = 0; const r = activeRun(); if (r) renderOut(r); };
-  $('histBtn').onclick = () => { S.histShow = 0; renderHist(); $('history').classList.toggle('hidden'); };
+  let histBusy = false;
+  $('histBtn').onclick = async () => {
+    const drawer = $('history');
+    if (!drawer.classList.contains('hidden')) { drawer.classList.add('hidden'); return; }
+    // 先同步打开：await 期间用户再点/按 Esc 不会被迟到的 toggle 反转
+    drawer.classList.remove('hidden');
+    if (histBusy) return;
+    histBusy = true;
+    try {
+      // 抽屉只在启动时拿过一次历史，跑完新任务后要重新拉，否则看不到本次记录
+      const st = await api('/api/state');
+      S.hist = st.history || [];
+      S.histShow = 0;
+      renderHist();
+    } catch (e) { /* 保留旧列表 */ }
+    finally { histBusy = false; }
+  };
   $('histClose').onclick = () => $('history').classList.add('hidden');
   $('histSearch').addEventListener('input', () => { S.histShow = 0; renderHist(); });
   document.addEventListener('keydown', e => {
@@ -574,4 +590,9 @@ async function openReplay(h) {
   } catch (e) { $('stat').textContent = '✗ ' + e.message; }
 }
 
-init().catch(e => { document.body.innerHTML = '<pre style="padding:20px;color:#f66">加载失败: ' + e.message + '</pre>'; });
+init().catch(e => {
+  const pre = document.createElement('pre');
+  pre.style.cssText = 'padding:20px;color:#f66';
+  pre.textContent = '加载失败: ' + e.message;
+  document.body.replaceChildren(pre);
+});

@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import http.client
 import json
+import os
 import re
 import select
 import shutil
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -223,8 +225,81 @@ class StaticPathTest(unittest.TestCase):
         h.j = lambda obj, code=200: calls.setdefault("code", code)
         h._send = lambda *a, **k: calls.setdefault("send", True)
         evil = f"{Path(ROOT).name}_evil/secret.txt"
-        h.static(Path(ROOT) / "web/../../" / evil)
+        h.static(Path(ROOT) / "web/../../" / evil, ROOT)
         self.assertEqual(calls.get("code"), 403, "前缀混淆路径应返回 403")
+
+
+class ApiValidationTest(unittest.TestCase):
+    def _handler(self, path):
+        """不经过 socket 的 Handler：记录 j()/_send() 的结果。"""
+        h = tk.Handler.__new__(tk.Handler)
+        h.command = "GET"
+        h.path = path
+        got = {}
+        h.j = lambda obj, code=200: got.update(obj=obj, code=code)
+        h._send = lambda code, body, ctype, extra=None: got.update(code=code, body=body)
+        return h, got
+
+    def test_poll_rejects_non_numeric_from(self):
+        r = tk.Run("t", "t", "cmd", ["true"], "/tmp")
+        tk.RUNS[r.id] = r
+        try:
+            h, got = self._handler(f"/api/poll?id={r.id}&from=abc")
+            h.do_GET()
+            self.assertEqual(got.get("code"), 400, "非法 from 应返回 400 而不是断连")
+        finally:
+            tk.RUNS.pop(r.id, None)
+
+    def test_replay_rejects_path_traversal(self):
+        d = Path(tempfile.mkdtemp(prefix="tk_rid_"))
+        secret = d / "secret.log"
+        secret.write_text("TRAVERSAL_MARKER", encoding="utf-8")
+        try:
+            rid = os.path.relpath(secret, tk.LOGS)[:-len(".log")]
+            h, got = self._handler("/api/replay?id=" + urllib.parse.quote(rid))
+            h.do_GET()
+            self.assertEqual(got.get("code"), 400, "穿越 id 必须被白名单拒绝")
+            self.assertNotIn("TRAVERSAL_MARKER", str(got.get("obj")))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_replay_accepts_valid_id(self):
+        d = Path(tempfile.mkdtemp(prefix="tk_valid_"))
+        old = tk.LOGS
+        tk.LOGS = d
+        (d / "0123456789ab.log").write_text("OK_LINE", encoding="utf-8")
+        try:
+            h, got = self._handler("/api/replay?id=0123456789ab")
+            h.do_GET()
+            self.assertEqual(got.get("code"), 200, "合法 12 位 hex id 必须仍可回放")
+            self.assertEqual(got.get("obj", {}).get("lines"), ["OK_LINE"])
+        finally:
+            tk.LOGS = old
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_static_route_confined_to_web(self):
+        h, got = self._handler("/web/../tools.toml")
+        h.do_GET()
+        self.assertEqual(got.get("code"), 403, "静态路由不能逃出 web/")
+        h, got = self._handler("/web/style.css")
+        h.do_GET()
+        self.assertEqual(got.get("code"), 200, "正常静态资源仍要能取到")
+
+    def test_static_blocks_symlinked_index(self):
+        """目录请求追加 index.html 后仍要落在 base 内：符号链接 index 不能逃逸。"""
+        outside = Path(tempfile.mkdtemp(prefix="tk_idx_outside_"))
+        (outside / "index.html").write_text("SYMLINK_INDEX_MARKER", encoding="utf-8")
+        sub = ROOT / "web" / f".audit_index_{time.time_ns()}"
+        sub.mkdir()
+        (sub / "index.html").symlink_to(outside / "index.html")
+        try:
+            h, got = self._handler("/web/" + sub.name + "/")
+            h.do_GET()
+            self.assertEqual(got.get("code"), 403, "目录 index 符号链接逃逸应被拒")
+            self.assertNotIn(b"SYMLINK_INDEX_MARKER", got.get("body") or b"")
+        finally:
+            shutil.rmtree(sub, ignore_errors=True)
+            shutil.rmtree(outside, ignore_errors=True)
 
 
 if __name__ == "__main__":
