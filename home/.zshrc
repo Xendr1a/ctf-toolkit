@@ -88,25 +88,43 @@ if (( __have_tty )); then
     # User aliases
     alias vim="nvim"
     alias vi="nvim"
-    alias ls="ls --color=auto"
-    alias ll="ls -la"
-    alias la="ls -A"
+
+    if command -v eza >/dev/null 2>&1; then
+        # Omarchy 的长列表：表头、目录优先、Nerd Font 图标。
+        alias ls='eza -lh --group-directories-first --icons=auto'
+        alias ll='ls -aa'
+        alias la='ls -a'
+    else
+        alias ls='ls --color=auto'
+        alias ll='ls -la'
+        alias la='ls -A'
+    fi
 
     # fzf：Ctrl+R 历史、Ctrl+T 文件、Alt+C 跳目录、**<Tab> 补全
     if command -v fzf >/dev/null 2>&1; then
+        if [[ -z ${FZF_CTRL_T_OPTS:-} ]] && command -v bat >/dev/null 2>&1; then
+            export FZF_CTRL_T_OPTS="--preview 'if [ -d {} ]; then ls -1A --color=always -- {}; else bat --color=always --paging=never --style=numbers --line-range=:200 -- {}; fi'"
+        fi
         source <(fzf --zsh)
     fi
 
     # p10k 配置
     [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
-    # 可选工具：未安装时不影响 shell 启动。
+    # thefuck 生成的函数会读取当前 shell 的历史，只在第一次调用时加载。
     if command -v thefuck >/dev/null 2>&1; then
-        eval "$(thefuck --alias)"
+        function fuck {
+            local definition
+            definition=$(command thefuck --alias fuck) || return
+            unfunction fuck
+            eval "$definition" || return
+            (( $+functions[fuck] )) || return 1
+            fuck "$@"
+        }
     fi
 
-    # Oh-my-pi
-    if command -v omp >/dev/null 2>&1; then
+    # Arch 包自带 _omp，compinit 已注册。独立安装时才从 omp 生成补全。
+    if [[ -z ${_comps[omp]-} ]] && command -v omp >/dev/null 2>&1; then
         eval "$(omp completions zsh)"
     fi
 fi
