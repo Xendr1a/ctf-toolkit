@@ -1,0 +1,19 @@
+// 本文件由 Noctalia 插件 xendr1a/niri-displays 自动生成；改布局请用面板（右上角显示器图标）。
+// 关闭(off)状态不会被写入，避免拔掉外接屏后一个可用的输出都没有。
+// 开机焦点按 focus-at-startup 出现的先后决定：接了外接屏就落在它上面，没接就落在内置屏。
+
+output "HDMI-A-1" {
+    mode "1920x1080@240.000"
+    scale 1
+    transform "normal"
+    position x=3520 y=360
+    focus-at-startup
+}
+
+output "eDP-1" {
+    mode "2560x1600@240.000"
+    scale 1.5
+    transform "normal"
+    position x=5440 y=-700
+    focus-at-startup
+}

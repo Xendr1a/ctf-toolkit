@@ -1,0 +1,68 @@
+# Dragon Mist — 低饱和暖灰，整体提亮一档
+[colors.primary]
+background = '#262421'
+foreground = '#c5c9c5'
+dim_foreground = '#8d948d'
+bright_foreground = '#d7dbd5'
+
+[colors.cursor]
+text = '#262421'
+cursor = '#d7dbd5'
+
+[colors.vi_mode_cursor]
+text = '#262421'
+cursor = '#9fb9c5'
+
+[colors.selection]
+text = '#d7dbd5'
+background = '#3b424b'
+
+[colors.search.matches]
+foreground = '#262421'
+background = '#cfbd95'
+
+[colors.search.focused_match]
+foreground = '#262421'
+background = '#9fb9c5'
+
+[colors.footer_bar]
+foreground = '#262421'
+background = '#c5c9c5'
+
+[colors.hints.start]
+foreground = '#262421'
+background = '#cfbd95'
+
+[colors.hints.end]
+foreground = '#262421'
+background = '#b8a8ba'
+
+[colors.normal]
+black   = '#6f746e'
+red     = '#cd8781'
+green   = '#9db69a'
+yellow  = '#cfbd95'
+blue    = '#9fb9c5'
+magenta = '#b8a8ba'
+cyan    = '#a2b9b7'
+white   = '#c5c9c5'
+
+[colors.bright]
+black   = '#8d948d'
+red     = '#dc9a94'
+green   = '#b0c9ac'
+yellow  = '#ddcda6'
+blue    = '#b2ccd8'
+magenta = '#cbbfd0'
+cyan    = '#b5ccc9'
+white   = '#d7dbd5'
+
+[colors.dim]
+black   = '#55524e'
+red     = '#9a635e'
+green   = '#74836f'
+yellow  = '#98896c'
+blue    = '#74898f'
+magenta = '#87798a'
+cyan    = '#788b89'
+white   = '#8f948d'

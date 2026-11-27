@@ -1,0 +1,365 @@
+// This config is in the KDL format: https://kdl.dev
+// "/-" comments out the following node.
+// Check the wiki for a full description of the configuration:
+// https://yalter.github.io/niri/Configuration:-Introduction
+
+// Input device configuration.
+// Find the full list of options on the wiki:
+// https://yalter.github.io/niri/Configuration:-Input
+
+environment {
+}
+
+// 本机没有 Pictures/wallhaven 图库：壁纸交给 noctalia 自己管（GUI 里选），
+// 原仓库这行指向 /home/srk/Pictures/wallhaven/wallhaven-gw2r2e.jpg。
+// /-spawn-at-startup "swaybg" "-i" "/home/srk/Pictures/wallhaven/wallhaven-gw2r2e.jpg" "-m" "fill"
+spawn-at-startup "noctalia"
+window-rule {
+    geometry-corner-radius 20
+    clip-to-geometry true
+}
+
+// v5 backdrop layer (blurred wallpaper) for niri overview.
+layer-rule {
+  match namespace="^noctalia-backdrop"
+  place-within-backdrop true
+}
+
+// 通知/OSD 不请求合成器模糊：模糊区域的边缘（底边、R角）只有 1-2px 露在卡片填充之外，
+// xray 默认 true + 全局 blur 默认 saturation 1.5 会把这条缝推成饱和纯色。niri #4268 判为 intended。
+layer-rule {
+  match namespace="^noctalia-(notification|osd)$"
+  background-effect {
+    blur false
+  }
+}
+
+debug {
+    honor-xdg-activation-with-invalid-serial
+}
+input {
+    keyboard {
+        xkb {
+            // If this section is empty, niri will fetch xkb settings
+            // from org.freedesktop.locale1. You can control these using
+            // localectl set-x11-keymap.
+        }
+
+        // Enable numlock on startup, omitting this setting disables it.
+        numlock
+    }
+
+    touchpad {
+        tap
+        natural-scroll
+        accel-speed 0.5
+    }
+
+    mouse {
+         accel-speed -0.8
+         accel-profile "adaptive"
+    }
+
+    trackpoint {
+        accel-speed 0.6
+    }
+}
+
+// 输出（显示器）布局：由 Noctalia 的显示器面板维护，写在 outputs.kdl 里。
+// 面板：右上角显示器图标 → 开关 / 分辨率 / 刷新率 / 旋转 / 缩放 / 位置 / 主屏。
+// 想手改就直接改 outputs.kdl（面板下次改动会覆盖它，覆盖前的内容会被读取合并）。
+include "outputs.kdl"
+
+layout {
+    background-color "#1a1b26"
+    gaps 16
+
+    center-focused-column "never"
+
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    default-column-width { proportion 0.5; }
+
+    focus-ring {
+        width 4
+        active-color "#7fc8ff"
+        inactive-color "#505050"
+    }
+
+    border {
+        off
+        width 4
+        active-color "#ffc87f"
+        inactive-color "#505050"
+        urgent-color "#9b0000"
+    }
+
+    shadow {
+        softness 30
+        spread 5
+        offset x=0 y=5
+        color "#0007"
+    }
+}
+
+// spawn-at-startup "waybar"
+
+hotkey-overlay {
+    // skip-at-startup
+}
+
+prefer-no-csd
+
+screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+animations {
+    // off
+}
+
+// Window rules
+window-rule {
+    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    default-column-width {}
+}
+
+window-rule {
+    match app-id=r#"firefox$"# title="^Picture-in-Picture$"
+    open-floating true
+}
+
+// fcitx X11 候选框被 niri 当普通平铺窗口抢焦点，微信里切输入法就会闪一下然后打不了中文
+window-rule {
+    match app-id="^fcitx$" title="^Fcitx5 Input Window$"
+    open-floating true
+    open-focused false
+}
+
+/-window-rule {
+    match app-id=r#"^org\.keepassxc\.KeePassXC$"#
+    match app-id=r#"^org\.gnome\.World\.Secrets$"#
+    block-out-from "screen-capture"
+}
+
+window-rule {
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+
+// Manggo 的透明弹窗需要让 niri 只绘制外侧焦点环。
+window-rule {
+    match app-id=r#"^com\.pylogmon\.Manggo$"#
+    draw-border-with-background false
+}
+
+// Manggo 翻译窗四周有 24 逻辑像素的透明留白，向内绘制贴着内容的焦点轮廓。
+window-rule {
+    match app-id=r#"^com\.pylogmon\.Manggo$"# title="^(翻译|Translation)$"
+    max-width 568
+    // GTK 3 浮窗收到平铺状态时，内容变化可能要等失焦才重新调整尺寸。
+    tiled-state false
+    focus-ring { off; }
+    border { off; }
+    geometry-corner-radius 37
+    shadow {
+        on
+        softness 0
+        spread -21
+        offset x=0 y=0
+        draw-behind-window true
+        color "#58a6ff"
+        inactive-color "#010409"
+    }
+}
+
+binds {
+    Mod+Shift+Slash hotkey-overlay-title="显示重要快捷键" { show-hotkey-overlay; }
+
+    // 自定义快捷键
+    Mod+E hotkey-overlay-title="文件管理器" { spawn "nautilus"; }
+    // spawn 不走 shell，niri 自己的 PATH 里没有 ~/.local/bin，必须显式展开；
+    // 截图脚本内部还要调 ~/.local/bin 下的 wl-copy，所以 PATH 也要带上
+    Mod+Shift+S hotkey-overlay-title="区域截图 → satty 标注" { spawn-sh r#"PATH="$HOME/.local/bin:$PATH"; exec ~/.local/bin/screenshot-annotate"#; }
+    Mod+Shift+O hotkey-overlay-title="区域截图 → OCR 到剪贴板" { spawn-sh r#"PATH="$HOME/.local/bin:$PATH"; exec ~/.local/bin/ocr-region"#; }
+    // Manggo 1.3.9 由 pacman 提供（/opt/manggo + /usr/bin/manggo），Wayland 全局热键由 niri 注册。
+    // wl-paste 只装在 ~/.local/bin，这里给绝对路径；没有选中文本时退回 Manggo 自带的选区取词。
+    Mod+A repeat=false hotkey-overlay-title="选词翻译" {
+        spawn-sh r#"
+            if selected=$(/usr/bin/timeout 1s "$HOME/.local/bin/wl-paste" --primary --type text --no-newline 2>/dev/null); then
+                case "$selected" in
+                    *[![:space:]]*)
+                        if /usr/bin/manggo --action input-translation --text "$selected"; then
+                            exit 0
+                        fi
+                        ;;
+                esac
+            fi
+            /usr/bin/sleep 0.15
+            exec /usr/bin/manggo --action selection-translation
+        "#
+    }
+    Mod+S repeat=false hotkey-overlay-title="截图翻译" { spawn-sh r#"PATH="$HOME/.local/bin:$PATH"; exec ~/.local/bin/manggo-screenshot-translate"#; }
+    Mod+Shift+A hotkey-overlay-title="打开翻译窗口" { spawn "manggo" "--action" "input-translation"; }
+    Ctrl+Alt+Right hotkey-overlay-title="下一曲" { spawn "noctalia" "msg" "media" "next"; }
+    Ctrl+Alt+Left hotkey-overlay-title="上一曲" { spawn "noctalia" "msg" "media" "previous"; }
+    Mod+B hotkey-overlay-title="剪贴板" { spawn "noctalia" "msg" "panel-toggle" "clipboard"; }
+    Mod+T hotkey-overlay-title="打开终端：alacritty" { spawn "alacritty"; }
+    Mod+D hotkey-overlay-title="运行应用：启动器" { spawn "noctalia" "msg" "panel-toggle" "launcher"; }
+    Super+Alt+L hotkey-overlay-title="锁屏" { spawn "noctalia" "msg" "session" "lock"; }
+
+    // 音量
+    XF86AudioRaiseVolume allow-when-locked=true { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.02+"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn-sh "wpctl set-volume @DEFAULT_AUDIO_SINK@ 0.02-"; }
+    XF86AudioMute        allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"; }
+    XF86AudioMicMute     allow-when-locked=true { spawn-sh "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"; }
+
+    // 亮度
+    XF86MonBrightnessUp allow-when-locked=true { spawn "noctalia" "msg" "brightness-up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "noctalia" "msg" "brightness-down"; }
+
+    // 媒体
+    XF86AudioPlay allow-when-locked=true { spawn "noctalia" "msg" "media" "toggle"; }
+    XF86AudioPause allow-when-locked=true { spawn "noctalia" "msg" "media" "pause"; }
+    XF86AudioNext allow-when-locked=true { spawn "noctalia" "msg" "media" "next"; }
+    XF86AudioPrev allow-when-locked=true { spawn "noctalia" "msg" "media" "previous"; }
+    XF86AudioStop allow-when-locked=true { spawn "noctalia" "msg" "media" "stop"; }
+
+    // 总览
+    Mod+O repeat=false hotkey-overlay-title="打开总览" { toggle-overview; }
+
+    Mod+Q repeat=false hotkey-overlay-title="关闭当前窗口" { close-window; }
+
+    Mod+Left  hotkey-overlay-title="焦点移到左列" { focus-column-left; }
+    Mod+Down  hotkey-overlay-title="焦点移到下方窗口" { focus-window-down; }
+    Mod+Up    hotkey-overlay-title="焦点移到上方窗口" { focus-window-up; }
+    Mod+Right hotkey-overlay-title="焦点移到右列" { focus-column-right; }
+    Mod+H     hotkey-overlay-title="焦点移到左列（H）" { focus-column-left; }
+    Mod+J     hotkey-overlay-title="焦点移到下方窗口（J）" { focus-window-down; }
+    Mod+K     hotkey-overlay-title="焦点移到上方窗口（K）" { focus-window-up; }
+    Mod+L     hotkey-overlay-title="焦点移到右列（L）" { focus-column-right; }
+
+    Mod+Ctrl+Left  hotkey-overlay-title="左移当前列" { move-column-left; }
+    Mod+Ctrl+Down  hotkey-overlay-title="下移当前列" { move-window-down; }
+    Mod+Ctrl+Up    hotkey-overlay-title="上移当前列" { move-window-up; }
+    Mod+Ctrl+Right hotkey-overlay-title="右移当前列" { move-column-right; }
+    Mod+Ctrl+H     hotkey-overlay-title="左移当前列（H）" { move-column-left; }
+    Mod+Ctrl+J     hotkey-overlay-title="下移当前列（J）" { move-window-down; }
+    Mod+Ctrl+K     hotkey-overlay-title="上移当前列（K）" { move-window-up; }
+    Mod+Ctrl+L     hotkey-overlay-title="右移当前列（L）" { move-column-right; }
+
+    Mod+Home hotkey-overlay-title="焦点移到第一列" { focus-column-first; }
+    Mod+End  hotkey-overlay-title="焦点移到最后一列" { focus-column-last; }
+    Mod+Ctrl+Home hotkey-overlay-title="把当前列移到最前" { move-column-to-first; }
+    Mod+Ctrl+End  hotkey-overlay-title="把当前列移到最后" { move-column-to-last; }
+
+    Mod+Shift+Left  hotkey-overlay-title="焦点移到左侧显示器" { focus-monitor-left; }
+    Mod+Shift+Down  hotkey-overlay-title="焦点移到下方显示器" { focus-monitor-down; }
+    Mod+Shift+Up    hotkey-overlay-title="焦点移到上方显示器" { focus-monitor-up; }
+    Mod+Shift+Right hotkey-overlay-title="焦点移到右侧显示器" { focus-monitor-right; }
+    Mod+Shift+H     hotkey-overlay-title="焦点移到左侧显示器（H）" { focus-monitor-left; }
+    Mod+Shift+J     hotkey-overlay-title="焦点移到下方显示器（J）" { focus-monitor-down; }
+    Mod+Shift+K     hotkey-overlay-title="焦点移到上方显示器（K）" { focus-monitor-up; }
+    Mod+Shift+L     hotkey-overlay-title="焦点移到右侧显示器（L）" { focus-monitor-right; }
+
+    Mod+Shift+Ctrl+Left  hotkey-overlay-title="把当前列移到左侧显示器" { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+Down  hotkey-overlay-title="把当前列移到下方显示器" { move-column-to-monitor-down; }
+    Mod+Shift+Ctrl+Up    hotkey-overlay-title="把当前列移到上方显示器" { move-column-to-monitor-up; }
+    Mod+Shift+Ctrl+Right hotkey-overlay-title="把当前列移到右侧显示器" { move-column-to-monitor-right; }
+    Mod+Shift+Ctrl+H     hotkey-overlay-title="把当前列移到左侧显示器（H）" { move-column-to-monitor-left; }
+    Mod+Shift+Ctrl+J     hotkey-overlay-title="把当前列移到下方显示器（J）" { move-column-to-monitor-down; }
+    Mod+Shift+Ctrl+K     hotkey-overlay-title="把当前列移到上方显示器（K）" { move-column-to-monitor-up; }
+    Mod+Shift+Ctrl+L     hotkey-overlay-title="把当前列移到右侧显示器（L）" { move-column-to-monitor-right; }
+
+    Mod+Page_Down      hotkey-overlay-title="切换到下一个工作区" { focus-workspace-down; }
+    Mod+Page_Up        hotkey-overlay-title="切换到上一个工作区" { focus-workspace-up; }
+    Mod+U              hotkey-overlay-title="切换到下一个工作区（U）" { focus-workspace-down; }
+    Mod+I              hotkey-overlay-title="切换到上一个工作区（I）" { focus-workspace-up; }
+    Mod+Ctrl+Page_Down hotkey-overlay-title="把当前列移到下一个工作区" { move-column-to-workspace-down; }
+    Mod+Ctrl+Page_Up   hotkey-overlay-title="把当前列移到上一个工作区" { move-column-to-workspace-up; }
+    Mod+Ctrl+U         hotkey-overlay-title="把当前列移到下一个工作区（U）" { move-column-to-workspace-down; }
+    Mod+Ctrl+I         hotkey-overlay-title="把当前列移到上一个工作区（I）" { move-column-to-workspace-up; }
+
+    Mod+Shift+Page_Down hotkey-overlay-title="把工作区下移一层" { move-workspace-down; }
+    Mod+Shift+Page_Up   hotkey-overlay-title="把工作区上移一层" { move-workspace-up; }
+    Mod+Shift+U         hotkey-overlay-title="把工作区下移一层（U）" { move-workspace-down; }
+    Mod+Shift+I         hotkey-overlay-title="把工作区上移一层（I）" { move-workspace-up; }
+
+    Mod+WheelScrollDown      cooldown-ms=150 hotkey-overlay-title="滚轮：切换到下一个工作区" { focus-workspace-down; }
+    Mod+WheelScrollUp        cooldown-ms=150 hotkey-overlay-title="滚轮：切换到上一个工作区" { focus-workspace-up; }
+    Mod+Ctrl+WheelScrollDown cooldown-ms=150 hotkey-overlay-title="滚轮：把当前列移到下一个工作区" { move-column-to-workspace-down; }
+    Mod+Ctrl+WheelScrollUp   cooldown-ms=150 hotkey-overlay-title="滚轮：把当前列移到上一个工作区" { move-column-to-workspace-up; }
+
+    Mod+WheelScrollRight      hotkey-overlay-title="滚轮：焦点移到右列" { focus-column-right; }
+    Mod+WheelScrollLeft       hotkey-overlay-title="滚轮：焦点移到左列" { focus-column-left; }
+    Mod+Ctrl+WheelScrollRight hotkey-overlay-title="滚轮：右移当前列" { move-column-right; }
+    Mod+Ctrl+WheelScrollLeft  hotkey-overlay-title="滚轮：左移当前列" { move-column-left; }
+
+    Mod+Shift+WheelScrollDown      hotkey-overlay-title="滚轮：焦点移到右列（Shift）" { focus-column-right; }
+    Mod+Shift+WheelScrollUp        hotkey-overlay-title="滚轮：焦点移到左列（Shift）" { focus-column-left; }
+    Mod+Ctrl+Shift+WheelScrollDown hotkey-overlay-title="滚轮：右移当前列（Ctrl+Shift）" { move-column-right; }
+    Mod+Ctrl+Shift+WheelScrollUp   hotkey-overlay-title="滚轮：左移当前列（Ctrl+Shift）" { move-column-left; }
+
+    Mod+1 hotkey-overlay-title="切换到工作区 1" { focus-workspace 1; }
+    Mod+2 hotkey-overlay-title="切换到工作区 2" { focus-workspace 2; }
+    Mod+3 hotkey-overlay-title="切换到工作区 3" { focus-workspace 3; }
+    Mod+4 hotkey-overlay-title="切换到工作区 4" { focus-workspace 4; }
+    Mod+5 hotkey-overlay-title="切换到工作区 5" { focus-workspace 5; }
+    Mod+6 hotkey-overlay-title="切换到工作区 6" { focus-workspace 6; }
+    Mod+7 hotkey-overlay-title="切换到工作区 7" { focus-workspace 7; }
+    Mod+8 hotkey-overlay-title="切换到工作区 8" { focus-workspace 8; }
+    Mod+9 hotkey-overlay-title="切换到工作区 9" { focus-workspace 9; }
+    Mod+Ctrl+1 hotkey-overlay-title="把当前列移到工作区 1" { move-column-to-workspace 1; }
+    Mod+Ctrl+2 hotkey-overlay-title="把当前列移到工作区 2" { move-column-to-workspace 2; }
+    Mod+Ctrl+3 hotkey-overlay-title="把当前列移到工作区 3" { move-column-to-workspace 3; }
+    Mod+Ctrl+4 hotkey-overlay-title="把当前列移到工作区 4" { move-column-to-workspace 4; }
+    Mod+Ctrl+5 hotkey-overlay-title="把当前列移到工作区 5" { move-column-to-workspace 5; }
+    Mod+Ctrl+6 hotkey-overlay-title="把当前列移到工作区 6" { move-column-to-workspace 6; }
+    Mod+Ctrl+7 hotkey-overlay-title="把当前列移到工作区 7" { move-column-to-workspace 7; }
+    Mod+Ctrl+8 hotkey-overlay-title="把当前列移到工作区 8" { move-column-to-workspace 8; }
+    Mod+Ctrl+9 hotkey-overlay-title="把当前列移到工作区 9" { move-column-to-workspace 9; }
+
+    Mod+BracketLeft  hotkey-overlay-title="向左并入 / 弹出窗口" { consume-or-expel-window-left; }
+    Mod+BracketRight hotkey-overlay-title="向右并入 / 弹出窗口" { consume-or-expel-window-right; }
+
+    Mod+Comma  hotkey-overlay-title="把窗口并入当前列" { consume-window-into-column; }
+    Mod+Period hotkey-overlay-title="把窗口弹出为独立列" { expel-window-from-column; }
+
+    Mod+R hotkey-overlay-title="切换列宽预设" { switch-preset-column-width; }
+    Mod+Shift+R hotkey-overlay-title="切换窗口高度预设" { switch-preset-window-height; }
+    Mod+Ctrl+R hotkey-overlay-title="重置窗口高度" { reset-window-height; }
+    Mod+F hotkey-overlay-title="最大化当前列" { maximize-column; }
+    Mod+Shift+F hotkey-overlay-title="全屏当前窗口" { fullscreen-window; }
+
+    Mod+Ctrl+F hotkey-overlay-title="当前列扩展到可用宽度" { expand-column-to-available-width; }
+
+    Mod+C hotkey-overlay-title="当前列居中" { center-column; }
+    Mod+Ctrl+C hotkey-overlay-title="可见列居中" { center-visible-columns; }
+
+    Mod+Minus hotkey-overlay-title="列宽 -10%" { set-column-width "-10%"; }
+    Mod+Equal hotkey-overlay-title="列宽 +10%" { set-column-width "+10%"; }
+    Mod+Shift+Minus hotkey-overlay-title="窗口高度 -10%" { set-window-height "-10%"; }
+    Mod+Shift+Equal hotkey-overlay-title="窗口高度 +10%" { set-window-height "+10%"; }
+
+    Mod+V       hotkey-overlay-title="在浮动与平铺之间切换窗口" { toggle-window-floating; }
+    Mod+Shift+V hotkey-overlay-title="在浮动与平铺之间切换焦点" { switch-focus-between-floating-and-tiling; }
+
+    Mod+W hotkey-overlay-title="切换当前列标签页显示" { toggle-column-tabbed-display; }
+
+    Print hotkey-overlay-title="截图（交互）" { screenshot; }
+    Ctrl+Print hotkey-overlay-title="截取整个屏幕" { screenshot-screen; }
+    Alt+Print hotkey-overlay-title="截取当前窗口" { screenshot-window; }
+
+    Mod+Escape allow-inhibiting=false hotkey-overlay-title="开关快捷键抑制（让程序接收按键）" { toggle-keyboard-shortcuts-inhibit; }
+
+    Mod+Shift+E hotkey-overlay-title="退出 niri" { quit; }
+    Ctrl+Alt+Delete hotkey-overlay-title="退出 niri（Ctrl+Alt+Delete）" { quit; }
+
+    Mod+Shift+P hotkey-overlay-title="关闭显示器" { power-off-monitors; }
+
+    // 只留当前（焦点）显示器；再按一次全部打开。脚本：~/.local/bin/solo-display
+    Mod+Shift+M hotkey-overlay-title="只留当前显示器 / 全部打开" { spawn-sh "exec ~/.local/bin/solo-display"; }
+}
+include "./noctalia.kdl"
