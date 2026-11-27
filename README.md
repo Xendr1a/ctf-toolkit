@@ -2,7 +2,7 @@
 
 本仓库是 [Mel-SRK/My_config](https://github.com/Mel-SRK/My_config)（Arch + niri + Noctalia dotfiles 留档）加上本机在用的 CTF 工具箱（见 [CTF Toolkit](#ctf-toolkit)）。
 
-> 下文「当前环境」到「Hermes gateway」各节是**上游原文**，描述的是 Mel-SRK 的 ThinkPad T14 Gen4 (AMD)：`niri/config.kdl`、`kanshi/config`、`home/.zshrc`、`home/.gitconfig`、`foot/foot.ini` 等也都是那份配置。本机实际配置不同，先看 [本机差异](#本机差异相对上游)——直接 `./install.sh --apply` 会用上游版本覆盖本机定制。
+> 下文「当前环境」到「Hermes gateway」各节是**上游原文**，描述的是 Mel-SRK 的 ThinkPad T14 Gen4 (AMD)：`kanshi/config`、`home/.zshrc`、`home/.gitconfig`、`foot/foot.ini` 等也都是那份配置。`niri/config.kdl` 是上游模板，`install.sh` **不安装**它；实机用的是本机改写版 `dotfiles/niri/config.kdl`。其余上游与本机的差异先看 [本机差异](#本机差异相对上游)——除 niri 外，直接 `./install.sh --apply` 仍会用上游版本覆盖对应文件。
 
 ## 预览
 
@@ -46,7 +46,7 @@ toolkit                        # 浏览器模式：http://127.0.0.1:8787/
 |---|---|---|
 | 显示 | 内屏 `eDP-1` 2240x1400@60.002 scale 1.166667；外接 `DP-1`/`DP-2` HKC 2560x1440@200 scale 1 | 内屏 `eDP-1` 2560x1600@240 scale 1.5；外接 `HDMI-A-1` 1920x1080@240 scale 1 |
 | 显示器布局 | `kanshi/config` 三个 profile，热插拔交给 kanshi | 没启用 kanshi（包装着、service inactive）；布局由 Noctalia 显示器面板写 `~/.config/niri/outputs.kdl`，开关屏在面板里点 |
-| niri 配置 | 仓库 `niri/config.kdl`：显式 `output` 块、`swaybg` 壁纸 | 不入库：本机 `~/.config/niri/config.kdl` 是改写版（`include "outputs.kdl"`、不跑 `swaybg`、键位浮层用中文、加了 Manggo 窗口规则） |
+| niri 配置 | 仓库 `niri/config.kdl`：显式 `output` 块、`swaybg` 壁纸（上游模板，不安装） | 仓库 `dotfiles/niri/config.kdl`（MANIFEST 安装这份）：`include "outputs.kdl"`、不跑 `swaybg`、键位浮层用中文、Manggo 窗口规则、场景快捷键 `Mod+Shift+W/D/T` |
 | 终端 | Foot，CaskaydiaCove Nerd Font Mono 11 pt、Noctalia 配色、85% 不透明 + 模糊 | alacritty 0.17；`Mod+T` 仍绑 alacritty。foot 已安装、`foot/foot.ini` 已同步，只是不当默认终端 |
 | 登录进 tmux | `home/.zshrc` 里 `exec tmux`（TS2K，多终端开 view 会话） | 由 alacritty `[terminal.shell]` 执行 `tmux new-session -A -s Xendr1a`，`.zshrc` 不 attach |
 | 剪贴板工具 | `/usr/bin/wl-copy`、`wl-paste`（系统包） | 手工解包在 `~/opt/wl-clipboard`，软链到 `~/.local/bin`；niri 的截图/OCR 绑定里显式加 `PATH="$HOME/.local/bin:$PATH"` |
@@ -198,7 +198,7 @@ greetd 的两个文件（`/etc/greetd/config.toml`、`/etc/pam.d/greetd`）装�
 ## Noctalia v5
 
 - 启动：niri `spawn-at-startup "noctalia"`；IPC 一律 `noctalia msg ...`（旧的 `qs -c noctalia-shell ipc call ...` 已失效）
-- niri 启动时也运行 `swaybg` 来显示兜底壁纸，避免等待 Noctalia 加载时看到黑屏。换机器时把 [`niri/config.kdl`](niri/config.kdl) 里的图片路径改为实机路径。
+- niri 启动时也运行 `swaybg` 来显示兜底壁纸，避免等待 Noctalia 加载时看到黑屏。换机器时把 [`dotfiles/niri/config.kdl`](dotfiles/niri/config.kdl) 里的图片路径改为实机路径。
 - `~/.config/noctalia/config.toml`：声明式配置——backdrop、启动器/剪贴板面板里把 Tab 映射到 Up/Down
 - `~/.local/state/noctalia/settings.toml`：运行时状态，**优先级高于 config.toml**。GUI 里改任何设置（换壁纸、调动画、开关组件）都会整份重写它，所以它一直在漂。改完设置同步进仓库：
 

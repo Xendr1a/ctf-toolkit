@@ -78,7 +78,6 @@ if (( __have_tty )); then
     # Plugins
     plugins=(
         git
-        z
         zsh-autosuggestions
         zsh-syntax-highlighting
     )
@@ -106,6 +105,11 @@ if (( __have_tty )); then
             export FZF_CTRL_T_OPTS="--preview 'if [ -d {} ]; then ls -1A --color=always -- {}; else bat --color=always --paging=never --style=numbers --line-range=:200 -- {}; fi'"
         fi
         source <(fzf --zsh)
+    fi
+
+    # zoxide：z/zi 跳目录（未安装不影响启动）
+    if command -v zoxide >/dev/null 2>&1; then
+        eval "$(zoxide init zsh)"
     fi
 
     # p10k 配置

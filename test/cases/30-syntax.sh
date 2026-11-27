@@ -4,8 +4,15 @@ source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../lib/base-test.sh"
 
 if command -v niri >/dev/null 2>&1; then
   require_command niri
-  niri validate -c "$ROOT/niri/config.kdl" || fail 'niri 配置语法'
-  pass 'niri 配置语法'
+  # 校验的是 install.sh 真正安装的那份（含 include 的 outputs.kdl / noctalia.kdl），
+  # 不是根目录那份上游模板 —— 模板从来不会落到实机。
+  graph=$(mktemp -d)
+  trap 'rm -rf "$graph"' EXIT
+  cp -- "$ROOT/dotfiles/niri/config.kdl" "$graph/config.kdl"
+  cp -- "$ROOT/dotfiles/niri/outputs.kdl" "$graph/outputs.kdl"
+  cp -- "$ROOT/niri/noctalia.kdl" "$graph/noctalia.kdl"
+  niri validate -c "$graph/config.kdl" || fail 'niri 配置语法（安装版）'
+  pass 'niri 配置语法（安装版）'
 else
   skip 'niri 配置语法' '缺少命令：niri'
 fi

@@ -52,7 +52,7 @@ pass '重复安装快照一致'
 [[ ! -e "$tmp/sudo.log" ]] || fail '安装不调用 sudo' "$(cat "$tmp/sudo.log")"
 pass '安装不调用 sudo'
 assert_file "$tmp/home/.config/niri/config.kdl" '安装 niri 配置'
-cmp -s "$ROOT/niri/config.kdl" "$tmp/home/.config/niri/config.kdl" || fail 'niri 配置内容一致'
+cmp -s "$ROOT/dotfiles/niri/config.kdl" "$tmp/home/.config/niri/config.kdl" || fail 'niri 配置内容一致（必须是本机改写版，不是上游模板）'
 pass 'niri 配置内容一致'
 [[ -d "$tmp/home/.config/nvim" && -n "$(find "$tmp/home/.config/nvim" -mindepth 1 -print -quit)" ]] ||
   fail 'nvim 安装目录非空'

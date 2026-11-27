@@ -25,6 +25,7 @@
 ## 怎么装回去
 
 默认 **copy**；只有"只读、不会被程序重写、且路径被别的配置引用"的文件才考虑 symlink。
+`install.sh` 按仓库根目录的 `MANIFEST.tsv` 安装，niri 主配置那一行已经指向 `dotfiles/niri/config.kdl`（根目录 `niri/config.kdl` 是上游模板，永远不装）。下面的手动步骤只在不想跑 install.sh 时用。
 装之前先备份目标：
 
 ```bash

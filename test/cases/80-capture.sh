@@ -22,7 +22,7 @@ for name in screenshot-annotate ocr-region manggo-screenshot-translate; do
     ocr-region) bind='Mod\+Shift\+O' ;;
     manggo-screenshot-translate) bind='Mod\+S' ;;
   esac
-  grep -qE "^[[:space:]]*$bind[[:space:]].*\{[[:space:]]*spawn-sh \"exec ~/\.local/bin/$name\";[[:space:]]*\}" "$ROOT/niri/config.kdl" ||
+  grep -qE "^[[:space:]]*$bind[[:space:]].*\{[[:space:]]*spawn-sh\b.*exec ~/\.local/bin/$name" "$ROOT/dotfiles/niri/config.kdl" ||
     fail "niri 绑定使用可展开的 spawn-sh：$name"
   pass "niri 绑定使用可展开的 spawn-sh：$name"
   awk -F '\t' -v src="local/bin/$name" -v dst="~/.local/bin/$name" \
@@ -38,7 +38,7 @@ while read -r cmd; do
   PATH=/usr/local/sbin:/usr/local/bin:/usr/bin command -v -- "$cmd" >/dev/null 2>&1 ||
     fail "spawn 引用的 $cmd 必须在系统 PATH（否则改用 spawn-sh 展开 ~）"
   pass "spawn 引用的 $cmd 在系统 PATH"
-done < <(sed -n 's/.*{[[:space:]]*spawn "\([^"]*\)".*/\1/p' "$ROOT/niri/config.kdl" | sort -u)
+done < <(sed -n 's/.*{[[:space:]]*spawn "\([^"]*\)".*/\1/p' "$ROOT/dotfiles/niri/config.kdl" | sort -u)
 
 # 选区必须走 niri 截图 UI：grim+slurp 是实时画面，不冻结
 for file in local/bin/screenshot-annotate local/bin/ocr-region; do
