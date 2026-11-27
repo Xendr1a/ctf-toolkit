@@ -12,6 +12,7 @@ import os
 import re
 import select
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -300,6 +301,120 @@ class ApiValidationTest(unittest.TestCase):
         finally:
             shutil.rmtree(sub, ignore_errors=True)
             shutil.rmtree(outside, ignore_errors=True)
+
+
+class LogSizeTest(unittest.TestCase):
+    def test_trim_log_file_keeps_tail(self):
+        d = Path(tempfile.mkdtemp(prefix="tk_log_"))
+        try:
+            p = d / "run.log"
+            p.write_bytes(b"a\nb\nc\nd\ne\n")
+            tk.trim_log_file(p, max_bytes=5, keep_bytes=4)
+            data = p.read_bytes()
+            self.assertIn(tk.TRUNC_MARK, data)
+            self.assertEqual(data.split(tk.TRUNC_MARK, 1)[1], b"e\n", data)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_trim_log_file_noop_under_limit(self):
+        d = Path(tempfile.mkdtemp(prefix="tk_log_"))
+        try:
+            p = d / "run.log"
+            p.write_bytes(b"short\n")
+            tk.trim_log_file(p, max_bytes=1024, keep_bytes=16)
+            self.assertEqual(p.read_bytes(), b"short\n")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_tail_lines_bounds_read(self):
+        d = Path(tempfile.mkdtemp(prefix="tk_log_"))
+        try:
+            p = d / "run.log"
+            p.write_bytes(b"a\nb\nc\n")
+            self.assertEqual(tk.tail_lines(p, max_bytes=4, max_lines=10), ["c"],
+                             "从中间截断时第一段半行要丢掉")
+            self.assertEqual(tk.tail_lines(p, max_bytes=100, max_lines=10), ["a", "b", "c"])
+            self.assertEqual(tk.tail_lines(p, max_bytes=100, max_lines=1), ["c"])
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class ShutdownTest(unittest.TestCase):
+    def test_terminate_runs_kills_sigterm_ignorer(self):
+        p = subprocess.Popen(
+            ["bash", "-c", "trap '' TERM; sleep 60"],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        r = tk.Run("t", "t", "cmd", ["bash"], "/tmp")
+        r.proc = p
+        tk.RUNS[r.id] = r
+        try:
+            tk.terminate_runs(grace=0.3)
+            self.assertIsNotNone(p.poll(), "忽略 SIGTERM 的工具必须被 SIGKILL")
+        finally:
+            if p.poll() is None:
+                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                p.wait(timeout=2)
+            tk.RUNS.pop(r.id, None)
+
+    def test_backend_double_sigterm_still_reaps_stubborn(self):
+        """systemd(cgroup) 与 Tauri(stop_backend) 各发一次 SIGTERM，第二次不能打断兜底 KILL。"""
+        proc, port = _start_backend()
+        marker = f"tk_stub_{os.getpid()}_{time.time_ns()}"
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/run",
+            data=json.dumps({"tool": "shell", "cwd": "/tmp",
+                             "values": [f"trap '' TERM; exec -a {marker} sleep 300"]}).encode(),
+            headers={"X-Requested-By": "toolkit", "Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                self.assertTrue(json.load(r)["id"])
+            time.sleep(0.5)
+            proc.terminate()
+            time.sleep(0.3)
+            proc.terminate()           # 第二次信号落在 terminate_runs 的 2s 宽限期内
+            proc.wait(timeout=10)
+            left = subprocess.run(["pgrep", "-f", marker],
+                                  capture_output=True, text=True).stdout.strip()
+            self.assertEqual(left, "", "重复 SIGTERM 打断了兜底清理，工具进程变成孤儿")
+        finally:
+            for pid in subprocess.run(["pgrep", "-f", marker],
+                                      capture_output=True, text=True).stdout.split():
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except OSError:
+                    pass
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+            proc.stdout.close()
+            proc.stderr.close()
+
+
+class WordlistCacheTest(unittest.TestCase):
+    def test_cache_refreshes_after_content_edit(self):
+        d = Path(tempfile.mkdtemp(prefix="tk_wl_"))
+        wd = d / "wordlists"
+        wd.mkdir()
+        f = wd / "mini.txt"
+        f.write_text("a\nb\n", encoding="utf-8")
+        old_root, old_cache = tk.ROOT, tk._WL_CACHE
+        tk.ROOT = d
+        tk._WL_CACHE = {"sig": None, "items": []}
+        try:
+            self.assertIn("2 行", tk.wordlists()[0]["label"])
+            f.write_text("a\nb\nc\n", encoding="utf-8")
+            st = f.stat()
+            os.utime(f, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+            self.assertIn("3 行", tk.wordlists()[0]["label"],
+                          "只改文件内容不动目录时缓存也要失效")
+        finally:
+            tk.ROOT = old_root
+            tk._WL_CACHE = old_cache
+            shutil.rmtree(d, ignore_errors=True)
 
 
 if __name__ == "__main__":

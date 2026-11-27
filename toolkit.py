@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -34,6 +35,10 @@ LOGS.mkdir(parents=True, exist_ok=True)
 
 MAX_LINES = 60000          # 内存里保留的输出行数上限
 DROP_CHUNK = 20000         # 超限时一次丢弃的行数
+MAX_LOG_BYTES = 32 * 1024 * 1024   # 单个 run 的磁盘日志上限（防止大输出撑爆磁盘）
+KEEP_LOG_BYTES = 8 * 1024 * 1024   # 超限后保留的尾部字节数
+TAIL_READ_BYTES = 8 * 1024 * 1024  # 回放只读文件尾部这么多字节
+TRUNC_MARK = "[… 前部输出已丢弃（磁盘日志上限）…]\n".encode()
 ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07]*\x07")   # 进度条/颜色码，落库前剥掉
 RUN_ID_RE = re.compile(r"[0-9a-f]{12}")   # Run.id 的形状；同时挡住 replay/export 的路径穿越
 
@@ -76,7 +81,7 @@ def load_config() -> dict:
     return cfg | {"tool": tools}
 
 
-_WL_CACHE: dict = {"mtime": 0.0, "items": []}   # 字典目录 mtime 变了才重新数行数
+_WL_CACHE: dict = {"sig": None, "items": []}   # 文件 (mtime, size) 签名变了才重新数行数
 
 
 def wordlists() -> list[dict]:
@@ -84,21 +89,62 @@ def wordlists() -> list[dict]:
     if not d.is_dir():
         return []
     try:
-        m = d.stat().st_mtime
+        paths = sorted(d.glob("*.txt"))
+        sig = tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in paths)
     except OSError:
-        return []
-    if m == _WL_CACHE["mtime"]:
+        return _WL_CACHE["items"]
+    if sig == _WL_CACHE["sig"]:
         return _WL_CACHE["items"]
     out = []
-    for p in sorted(d.glob("*.txt")):
+    for p in paths:
         try:
-            n = sum(1 for _ in p.open("rb"))
+            with p.open("rb") as f:
+                n = sum(1 for _ in f)
         except OSError:
             n = 0
         out.append({"path": f"wordlists/{p.name}", "label": f"{p.name}（{n} 行）"})
-    _WL_CACHE["mtime"] = m
+    _WL_CACHE["sig"] = sig
     _WL_CACHE["items"] = out
     return out
+
+
+def trim_log_file(path: Path, max_bytes: int = MAX_LOG_BYTES,
+                  keep_bytes: int = KEEP_LOG_BYTES) -> None:
+    """磁盘日志超限时只保留最后 keep_bytes，按行边界切（宁可多丢半行）。"""
+    try:
+        size = path.stat().st_size
+        if size <= max_bytes:
+            return
+        with path.open("rb") as f:
+            f.seek(max(0, size - keep_bytes))
+            tail = f.read()
+        nl = tail.find(b"\n")
+        if nl >= 0:
+            tail = tail[nl + 1:]
+        tmp = path.with_name(path.name + ".tmp")   # 原子替换：并发 replay/export 不会读到写了一半的文件
+        try:
+            tmp.write_bytes(TRUNC_MARK + tail)
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def tail_lines(path: Path, max_bytes: int = TAIL_READ_BYTES,
+               max_lines: int = MAX_LINES) -> list[str]:
+    """只读日志尾部，避免回放/大日志把整文件读进内存。"""
+    size = path.stat().st_size
+    with path.open("rb") as f:
+        cut = size > max_bytes
+        if cut:
+            f.seek(size - max_bytes)
+        data = f.read()
+    if cut:
+        nl = data.find(b"\n")
+        if nl >= 0:
+            data = data[nl + 1:]
+    return data.decode("utf-8", "replace").splitlines()[-max_lines:]
 
 
 # ───────────────────────────── 运行管理 ─────────────────────────────
@@ -312,14 +358,22 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
     RUNS[run.id] = run
 
     def pump():
+        log = None
         try:
-            with run.log_path.open("w", errors="replace") as log:
-                assert run.proc and run.proc.stdout
-                for line in run.proc.stdout:
-                    line = ANSI_RE.sub("", line)
-                    run.add(line.rstrip("\r\n"))
-                    log.write(line)
-                    log.flush()
+            log = run.log_path.open("w", errors="replace")
+            written = 0
+            assert run.proc and run.proc.stdout
+            for line in run.proc.stdout:
+                line = ANSI_RE.sub("", line)
+                run.add(line.rstrip("\r\n"))
+                log.write(line)
+                log.flush()
+                written += len(line.encode("utf-8", "replace"))
+                if written > MAX_LOG_BYTES:      # 大输出：裁掉前部，只留尾部，避免磁盘无限涨
+                    log.close()
+                    trim_log_file(run.log_path)
+                    log = run.log_path.open("a", errors="replace")
+                    written = KEEP_LOG_BYTES
             rc = run.proc.wait()
             run.rc = rc
             run.ended = time.time()
@@ -328,10 +382,37 @@ def spawn(tool: dict, values, extra: str, target: str, cwd: str) -> Run:
             append_history(run.meta() | {"cmdline": run.cmdline, "cwd": run.cwd})
             trim_runs()
         finally:
+            if log:
+                log.close()
             _SLOTS.release()   # 无论正常/异常结束都释放并发名额
 
     threading.Thread(target=pump, daemon=True).start()
     return run
+
+
+def terminate_runs(grace: float = 2.0) -> None:
+    """退出时先 TERM，宽限期内不退再 KILL：忽略 SIGTERM 的工具不会变成孤儿。"""
+    procs = [r.proc for r in list(RUNS.values()) if r.proc and r.proc.poll() is None]
+    for p in procs:
+        try:
+            os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.time() + grace
+    while time.time() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.05)
+    for p in procs:                     # 先全部 KILL，避免逐个等待把总时长拖过桌壳的 3s 上限
+        if p.poll() is None:
+            try:
+                os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+    reap_deadline = time.time() + 0.5
+    for p in procs:
+        try:
+            p.wait(timeout=max(0.01, reap_deadline - time.time()))
+        except subprocess.TimeoutExpired:
+            pass
 
 
 # ───────────────────────────── HTTP ─────────────────────────────
@@ -425,8 +506,8 @@ class Handler(BaseHTTPRequestHandler):
             p = LOGS / f"{rid}.log"
             if not p.exists():
                 return self.j({"error": "日志已不存在"}, 404)
-            txt = p.read_text(errors="replace").splitlines()
-            return self.j({"lines": txt[-MAX_LINES:], "next": len(txt), "status": "done"})
+            txt = tail_lines(p)
+            return self.j({"lines": txt, "next": len(txt), "status": "done"})
 
         if path == "/api/kill":
             return self.j({"error": "用 POST"}, 405)
@@ -503,7 +584,7 @@ class Handler(BaseHTTPRequestHandler):
             dst_dir = HOME / "ctf" / "evidence" / slug
             dst_dir.mkdir(parents=True, exist_ok=True)
             dst = dst_dir / f"{time.strftime('%Y%m%d_%H%M%S')}_{rid}.log"
-            dst.write_bytes(src.read_bytes())
+            shutil.copyfile(src, dst)
             return self.j({"path": str(dst)})
 
         return self.j({"error": "not found"}, 404)
@@ -542,6 +623,16 @@ MAX_RUNS = 40              # 内存里最多留多少个 run（更老的从 RUNS
 KEEP_LOGS = 200            # 启动时保留最近多少个日志文件
 MAX_CONCURRENT = 20        # 同时真正在跑的进程上限，超过直接报错（防止批量目标把机器打爆）
 _SLOTS = threading.Semaphore(MAX_CONCURRENT)
+STOP_SIGNALED = False      # SIGTERM 只处理一次：Tauri 与 systemd 可能各发一次
+
+
+def _on_term(*_) -> None:
+    """第一次 SIGTERM 触发正常退出；清理期间再来的信号直接忽略，避免打断兜底 KILL。"""
+    global STOP_SIGNALED
+    if STOP_SIGNALED:
+        return
+    STOP_SIGNALED = True
+    raise SystemExit(0)
 
 
 def reload_config() -> dict:
@@ -606,7 +697,7 @@ def main() -> int:
             return 2
 
     # 桌面壳（Tauri）关窗口时发 SIGTERM：走正常退出路径，finally 里清理工具进程
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    signal.signal(signal.SIGTERM, _on_term)
 
     httpd = ThreadingHTTPServer((a.host, PORT), Handler)
     PORT = httpd.server_address[1]   # --port 0 时拿内核分配的真实端口（桌面壳从 stdout 读）
@@ -622,12 +713,10 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\nbye")
     finally:
-        for r in RUNS.values():
-            if r.proc and r.proc.poll() is None:
-                try:
-                    os.killpg(os.getpgid(r.proc.pid), signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
+        # 清理期间屏蔽重复 SIGTERM/SIGINT：第二次信号不能打断 terminate_runs 的宽限与兜底 KILL
+        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+        httpd.server_close()
+        terminate_runs()
     return 0
 
 
