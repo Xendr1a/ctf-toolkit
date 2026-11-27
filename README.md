@@ -28,6 +28,8 @@
 
 把分散在 `~/.local/bin`、`~/ctf/tools`、Docker 镜像里的命令行工具收进一个本地界面：左栏选工具 → 填参数 → 运行 → 输出实时流回页面，命令行可一键复制回终端。27 个工具 / 4 个分类，`tools.toml` 热重载，服务只监听 `127.0.0.1`；提供 Tauri 桌面窗口与纯浏览器两种模式。
 
+![CTF Toolkit 主界面](docs/images/toolkit-main.png)
+
 ```bash
 bash scripts/fetch-vendor.sh   # 字典与离线 CyberChef（约 80MB，不进 git）
 ln -sf "$PWD/bin/toolkit" ~/.local/bin/toolkit

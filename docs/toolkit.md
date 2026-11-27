@@ -14,6 +14,24 @@
 - 内置离线 CyberChef 与常用字典。
 - `tools.toml` 热重载：存盘即生效，无需重启。
 
+## 界面
+
+主界面：顶部「目标」自动填充主字段，中间是工具参数与命令预览，输出实时流回底部。
+
+![主界面](images/toolkit-main.png)
+
+多任务：每个 run 一个标签，独立轮询与缓冲；点 × 关闭，运行中的会先停止。
+
+![多任务标签](images/toolkit-tabs.png)
+
+历史记录：按工具/命令搜索，点一条即回放为标签。
+
+![历史记录](images/toolkit-history.png)
+
+内嵌的离线 CyberChef：编解码、哈希、加解密，不联网。
+
+![离线 CyberChef](images/toolkit-chef.png)
+
 ## 安装与启动
 
 ### 桌面模式（推荐）
