@@ -1,7 +1,7 @@
 'use strict';
 const S = {
   tools: [], cats: {}, wordlists: [], sel: null, filter: '',
-  target: '', hist: [], chefFrame: null, worddir: '',
+  target: '', hist: [], chefFrame: null, worddir: '', root: '',
   runs: new Map(),   // run id -> 任务状态（插入序 = 标签序），每个任务独立轮询
   active: null,      // 当前显示的标签
   find: '',          // 输出区查找关键字
@@ -25,6 +25,7 @@ async function init() {
   const st = await api('/api/state');
   S.tools = st.tools; S.cats = st.categories; S.wordlists = st.wordlists; S.hist = st.history || [];
   S.worddir = st.wordlists_dir || '';
+  S.root = (st.app && st.app.root) || '';
   $('title').textContent = st.app.title;
   $('cwd').value = st.workdir_default;
   renderNav();
@@ -255,8 +256,9 @@ function targetsList() {
 }
 function subst(s) {
   const tg = targetsList()[0];          // 多目标时预览只看第一个
-  if (!tg) return s;
-  return String(s).replaceAll('{{TARGET}}', tg);
+  const out = String(s).replaceAll('{{ROOT}}', S.root);
+  if (!tg) return out;
+  return out.replaceAll('{{TARGET}}', tg);
 }
 function quote(a) { return /[^\w@%+=:,./\u4e00-\u9fa5-]/.test(a) ? "'" + a.replaceAll("'", "'\\''") + "'" : a; }
 /* 注意：preview() 是后端 toolkit.py build() 的本地镜像，改拼装逻辑时两处要同步改 */
@@ -292,9 +294,10 @@ function preview() {
 
   const wd = S.worddir;
   const fix = (a) => (wd && a.startsWith('wordlists/')) ? wd + '/' + a.slice('wordlists/'.length) : a;
+  const cmdTokens = (t.cmd || []).map(subst);
   let cmd;
-  if (t.mode === 'shell') cmd = (t.cmd || []).concat([args.map(fix).join(' ')]).map(quote).join(' ');
-  else cmd = (t.cmd || []).concat(args.map(fix)).map(quote).join(' ');
+  if (t.mode === 'shell') cmd = cmdTokens.concat([args.map(fix).join(' ')]).map(quote).join(' ');
+  else cmd = cmdTokens.concat(args.map(fix)).map(quote).join(' ');
   $('cmdline').textContent = cmd;
   $('cmdline').dataset.cmd = cmd;
 }

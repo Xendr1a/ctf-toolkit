@@ -4,6 +4,8 @@
   toolkit                 # 起服务并打开浏览器
   toolkit --port 9000     # 换端口
   toolkit --no-browser    # 只起服务
+  toolkit new-challenge demo --cat pwn   # 生成题目工程
+  toolkit test-challenge demo            # compose 起停 + 端口冒烟
 
 零第三方依赖（仅标准库 + tomllib）。工具清单在 tools.toml，改完刷新页面即生效。
 """
@@ -235,6 +237,8 @@ def append_history(rec: dict):
 # ───────────────────────────── 命令拼装 ─────────────────────────────
 
 def subst(s: str, target: str) -> str:
+    # {{ROOT}} 让 tools.toml 能直接指向本仓库的启动器，不依赖 ~/.local/bin 的软链
+    s = s.replace("{{ROOT}}", str(ROOT))
     if target and "{{TARGET}}" in s:
         return s.replace("{{TARGET}}", target)
     return s
@@ -305,7 +309,7 @@ def build(tool: dict, values: list, extra: str, target: str) -> tuple[list[str],
             parts.append(subst(extra.strip(), target))
         # shell 模式把整段拼成一条命令交给 bash；字典相对路径在这里一次性替换掉
         args = [" ".join(parts).replace("wordlists/", str(ROOT / "wordlists") + "/")]
-    argv = list(tool["cmd"]) + abs_wordlists(args)
+    argv = [subst(c, target) for c in tool["cmd"]] + abs_wordlists(args)
     pretty = " ".join(shlex.quote(a) for a in argv)
     return argv, pretty
 
@@ -477,7 +481,8 @@ class Handler(BaseHTTPRequestHandler):
             cfg = reload_config()
             return self.j({
                 "app": {"title": cfg["app"].get("title", "CTF Toolkit"),
-                        "port": PORT, "uptime": round(time.time() - START, 1)},
+                        "port": PORT, "uptime": round(time.time() - START, 1),
+                        "root": str(ROOT)},
                 "categories": CATEGORIES,
                 "tools": cfg["tool"],
                 "wordlists": wordlists(),
@@ -677,12 +682,26 @@ def prune_state():
 
 def main() -> int:
     global CFG, CFG_MTIME, PORT
-    ap = argparse.ArgumentParser(description="CTF Toolkit 本地 Web 界面")
+    argv = sys.argv[1:]
+    if argv and argv[0] in ("new-challenge", "test-challenge"):
+        # 子命令只在 CLI 用；Web 模式不加载模板代码
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from challenge import cli as challenge_cli
+        return challenge_cli(argv)
+
+    ap = argparse.ArgumentParser(
+        description="CTF Toolkit 本地 Web 界面",
+        epilog="子命令:\n"
+               "  toolkit new-challenge <name> --cat pwn|web|crypto|misc|reverse [--dest DIR]\n"
+               "  toolkit test-challenge <dir> [--timeout 300]",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     ap.add_argument("--port", type=int, default=None, help="0 = 内核分配空闲端口（桌面壳用）")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--host", default="127.0.0.1", help="只允许回环地址；对外暴露需再加 --allow-remote")
     ap.add_argument("--allow-remote", action="store_true", help="允许绑定非回环地址（危险）")
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
 
     CFG = load_config()
     CFG_MTIME = (ROOT / "tools.toml").stat().st_mtime

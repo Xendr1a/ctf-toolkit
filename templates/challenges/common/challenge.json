@@ -1,0 +1,21 @@
+{
+  "title": {{NAME_JSON}},
+  "category": {{CATEGORY_TITLE_JSON}},
+  "type": "DynamicContainer",
+  "content": {{CONTENT_JSON}},
+  "flag": "flag{change_me}",
+  "flagTemplate": "flag{[GUID]}",
+  "originalScore": 1000,
+  "hints": [],
+  "submissionLimit": 0,
+  "fileName": {{ATTACHMENT_NAME_JSON}},
+  "containerImage": {{IMAGE_JSON}},
+  "memoryLimit": 128,
+  "cpuCount": 1,
+  "storageLimit": 256,
+  "exposePort": {{PORT}},
+  "networkMode": "Isolated",
+  "enableTrafficCapture": false,
+  "disableBloodBonus": false,
+  "attachments": {{ATTACHMENTS_JSON}}
+}

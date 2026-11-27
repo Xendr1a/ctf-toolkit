@@ -1,0 +1,14 @@
+# 真 flag 与本地状态
+flag.txt
+.env
+.env.*
+
+# 构建/打包产物
+dist/
+*.tar
+*.tar.gz
+*.zip
+
+# Python 残留
+__pycache__/
+*.pyc

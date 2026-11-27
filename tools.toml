@@ -458,6 +458,44 @@ presets = [
   { label = "看程序保护", args = "file ./chall; checksec --file=./chall" },
 ]
 
+# ── 题目脚手架 ─────────────────────────────────────────────────────────────
+[[tool]]
+id = "new-challenge"
+name = "新建题目"
+category = "local"
+icon = "🧩"
+desc = "生成可本地起、可上传 GZCTF 的题目工程（Dockerfile/compose/src/README）"
+notes = "分类：pwn / web / crypto / misc / reverse\n生成目录默认 ./<题目名>；目标已存在时拒绝覆盖\n生成后 cp flag.txt.example flag.txt 填真 flag，再用「题目自测」验端口"
+cmd = ["{{ROOT}}/bin/toolkit", "new-challenge"]
+fields = [
+  { flag = "", label = "题目名", kind = "text", ph = "demo", req = true, hint = "目录名/镜像名，字母数字_-" },
+  { flag = "--cat", label = "分类", kind = "select", options = ["pwn", "web", "crypto", "misc", "reverse"], default = "pwn", req = true },
+  { flag = "--dest", label = "生成目录", kind = "text", ph = "留空 = ./<题目名>" },
+]
+presets = [
+  { label = "Pwn 题目", args = "", set = { "--cat" = "pwn" } },
+  { label = "Web 题目", args = "", set = { "--cat" = "web" } },
+  { label = "Crypto 题目", args = "", set = { "--cat" = "crypto" } },
+  { label = "Misc 题目", args = "", set = { "--cat" = "misc" } },
+  { label = "Reverse 题目", args = "", set = { "--cat" = "reverse" } },
+]
+
+[[tool]]
+id = "test-challenge"
+name = "题目自测"
+category = "local"
+icon = "🧪"
+desc = "compose 起题 → 探活端口 → 无条件 teardown（只验起得来、端口通）"
+notes = "优先 docker compose（v2），退到 docker-compose（v1）；两者都缺会明确报错并非零退出\nFLAG 自动取题目目录的 flag.txt，其次环境变量 FLAG，最后用自测占位\n相对目录按页面顶部的工作目录解析"
+cmd = ["{{ROOT}}/bin/toolkit", "test-challenge"]
+fields = [
+  { flag = "", label = "题目目录", kind = "text", ph = "demo", req = true },
+  { flag = "--timeout", label = "总超时(秒)", kind = "number", default = "300" },
+]
+presets = [
+  { label = "当前目录的题目", args = "", set = { "0" = "." } },
+]
+
 [[tool]]
 id = "cyberchef"
 name = "CyberChef"
