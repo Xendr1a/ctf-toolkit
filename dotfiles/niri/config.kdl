@@ -175,6 +175,15 @@ window-rule {
     }
 }
 
+// 场景切换专用命名工作区（~/.local/bin/scene 按名聚焦；声明过就常驻，空区也在）
+workspace "写作" {
+    open-on-output "HDMI-A-1"
+}
+
+workspace "打题" {
+    open-on-output "HDMI-A-1"
+}
+
 binds {
     Mod+Shift+Slash hotkey-overlay-title="显示重要快捷键" { show-hotkey-overlay; }
 
@@ -361,5 +370,10 @@ binds {
 
     // 只留当前（焦点）显示器；再按一次全部打开。脚本：~/.local/bin/solo-display
     Mod+Shift+M hotkey-overlay-title="只留当前显示器 / 全部打开" { spawn-sh "exec ~/.local/bin/solo-display"; }
+
+    // 场景切换（脚本：~/.local/bin/scene）；同键再按一次 = 退出并还原
+    Mod+Shift+W hotkey-overlay-title="写作模式（再按退出）" { spawn-sh "exec ~/.local/bin/scene write"; }
+    Mod+Shift+D hotkey-overlay-title="演示模式（再按退出）" { spawn-sh "exec ~/.local/bin/scene present"; }
+    Mod+Shift+T hotkey-overlay-title="打题模式（再按退出）" { spawn-sh "exec ~/.local/bin/scene ctf"; }
 }
 include "./noctalia.kdl"

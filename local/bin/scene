@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# scene —— 场景切换：write 写作 / present 演示 / ctf 打题
+#
+#   scene write     写作：勿扰 + 切到「写作」工作区（空则带起 alacritty + firefox）
+#   scene present   演示：勿扰 + 双屏最高亮度 + 关夜间色温 + caffeine 防熄屏
+#   scene ctf       打题：勿扰 + 切到「打题」工作区（空则带起 alacritty + firefox）
+#
+# 再按一次同场景 = 退出并还原；直接切别的场景时先还原旧的再进新的。
+# 键位（niri config.kdl）：Mod+Shift+W / Mod+Shift+D / Mod+Shift+T。
+# 已知取舍：夜间色温没有查询接口，演示退出固定 nightlight-enable；
+# 若平时就一直关着色温，退出演示后需要手动 nightlight-disable。
+#
+# 依赖：niri msg、noctalia msg、jq、ddcutil（外接屏亮度读写）
+
+set -euo pipefail
+
+STATE_DIR="$HOME/.local/state/scene"
+SAVED_DIR="$STATE_DIR/saved"
+CURRENT_FILE="$STATE_DIR/current"
+BACKLIGHT=/sys/class/backlight/nvidia_0   # eDP-1 的背光设备
+
+mkdir -p "$SAVED_DIR"
+
+notify() { noctalia msg notification-show "场景切换" "$1" >/dev/null 2>&1 || true; }
+
+# ---------- 勿扰 ----------
+dnd_get() { noctalia msg notification-dnd-status 2>/dev/null || echo off; }
+dnd_set() { noctalia msg notification-dnd-set "$1" >/dev/null; }
+
+# ---------- 亮度 ----------
+internal_pct() {  # 内置屏当前亮度百分比；读不到输出空
+    if [[ -r $BACKLIGHT/brightness && -r $BACKLIGHT/max_brightness ]]; then
+        local cur max
+        cur=$(<"$BACKLIGHT/brightness") max=$(<"$BACKLIGHT/max_brightness")
+        (( max > 0 )) && echo $(( cur * 100 / max )) || true
+    fi
+}
+
+ddc_all() {  # ddcutil 可控外接屏的显示器号列表
+    timeout 4 ddcutil detect 2>/dev/null | sed -n 's/^Display \([0-9]*\)$/\1/p' || true
+}
+
+ddc_get() {  # $1=显示器号 → 当前亮度值
+    timeout 4 ddcutil -d "$1" getvcp 10 2>/dev/null | sed -n 's/.*current value = *\([0-9]*\).*/\1/p'
+}
+
+ddc_set() { timeout 4 ddcutil -d "$1" setvcp 10 "$2" >/dev/null 2>&1 || true; }
+
+# ---------- 工作区 ----------
+ws_window_count() {  # $1=工作区名 → 该区窗口数
+    local id
+    id=$(niri msg -j workspaces | jq -r --arg n "$1" '.[] | select(.name == $n) | .id' | head -n1)
+    [[ -n $id ]] || { echo 0; return; }
+    niri msg -j windows | jq --argjson id "$id" '[.[] | select(.workspace_id == $id)] | length'
+}
+
+spawn_apps() {  # 空工作区带起终端 + 浏览器（落在当前焦点工作区）
+    niri msg action spawn -- alacritty
+    niri msg action spawn -- firefox
+}
+
+# ---------- 进出场景 ----------
+enter_common() {
+    dnd_get > "$SAVED_DIR/dnd"
+    dnd_set on
+}
+
+exit_common() {
+    dnd_set "$(cat "$SAVED_DIR/dnd" 2>/dev/null || echo off)"
+    rm -f "$SAVED_DIR/dnd"
+}
+
+enter_write() {
+    enter_common
+    niri msg action focus-workspace 写作 >/dev/null
+    (( $(ws_window_count 写作) > 0 )) || spawn_apps
+}
+
+enter_ctf() {
+    enter_common
+    niri msg action focus-workspace 打题 >/dev/null
+    (( $(ws_window_count 打题) > 0 )) || spawn_apps
+}
+
+enter_present() {
+    enter_common
+    : > "$SAVED_DIR/brightness"
+    local pct d v
+    if pct=$(internal_pct); then
+        echo "internal $pct" >> "$SAVED_DIR/brightness"
+        noctalia msg brightness-set eDP-1 100 >/dev/null
+    fi
+    for d in $(ddc_all); do
+        if v=$(ddc_get "$d"); then
+            echo "ddc $d $v" >> "$SAVED_DIR/brightness"
+            ddc_set "$d" 100
+        fi
+    done
+    noctalia msg nightlight-disable >/dev/null
+    noctalia msg caffeine-enable >/dev/null
+}
+
+exit_present() {
+    exit_common
+    if [[ -f $SAVED_DIR/brightness ]]; then
+        local kind a b
+        while read -r kind a b; do
+            case $kind in
+                internal) noctalia msg brightness-set eDP-1 "$a" >/dev/null ;;
+                ddc)      ddc_set "$a" "$b" ;;
+            esac
+        done < "$SAVED_DIR/brightness"
+        rm -f "$SAVED_DIR/brightness"
+    fi
+    noctalia msg nightlight-enable >/dev/null
+    noctalia msg caffeine-disable >/dev/null
+}
+
+# ---------- 派发 ----------
+scene="${1:-}"
+case $scene in
+    write|present|ctf) ;;
+    *) echo "用法：scene write|present|ctf" >&2; exit 2 ;;
+esac
+
+declare -A NAME=( [write]=写作 [present]=演示 [ctf]=打题 )
+
+current=$(cat "$CURRENT_FILE" 2>/dev/null || true)
+
+# 同键再按：退出并还原
+if [[ $scene == "$current" ]]; then
+    case $scene in
+        present) exit_present ;;
+        *)       exit_common ;;
+    esac
+    rm -f "$CURRENT_FILE"
+    notify "已退出${NAME[$scene]}模式"
+    exit 0
+fi
+
+# 切到别的场景：先还原旧的
+if [[ -n $current ]]; then
+    case $current in
+        present) exit_present ;;
+        *)       exit_common ;;
+    esac
+    rm -f "$CURRENT_FILE"
+fi
+
+case $scene in
+    write)   enter_write ;;
+    present) enter_present ;;
+    ctf)     enter_ctf ;;
+esac
+echo "$scene" > "$CURRENT_FILE"
+
+case $scene in
+    write)   notify "写作模式：勿扰开，其余窗口留在原工作区" ;;
+    present) notify "演示模式：最高亮度、关色温、防熄屏" ;;
+    ctf)     notify "打题模式：勿扰开，工作区已就位" ;;
+esac

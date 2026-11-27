@@ -41,6 +41,7 @@ local/bin/mailsend	~/.local/bin/mailsend	user	命令行发信：复用 Thunderbi
 local/bin/screenshot-annotate	~/.local/bin/screenshot-annotate	user	区域截图 + satty 标注，Enter 复制并存盘
 local/bin/ocr-region	~/.local/bin/ocr-region	user	区域截图 OCR（chi_sim+eng）到剪贴板
 local/bin/manggo-screenshot-translate	~/.local/bin/manggo-screenshot-translate	user	冻结画面，选区 OCR 后交给 Manggo 翻译
+local/bin/scene	~/.local/bin/scene	user	场景切换：写作/演示/打题，同键再按退出并还原
 micmute-led/micmute-led-sync.sh	~/.local/bin/micmute-led-sync.sh	user	麦克风静音 LED 同步脚本
 micmute-led/micmute-led-sync.service	~/.config/systemd/user/micmute-led-sync.service	user	对应 user 服务
 systemd/user/kanshi.service	~/.config/systemd/user/kanshi.service	user	kanshi 随图形会话启动
