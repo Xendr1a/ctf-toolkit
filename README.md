@@ -1,6 +1,8 @@
 # My_config
 
-这台 ThinkPad T14 Gen4 (AMD) 上 Arch + niri + Noctalia 的配置留档，附带本机在用的 CTF 工具箱（见 [CTF Toolkit](#ctf-toolkit)）。
+本仓库是 [Mel-SRK/My_config](https://github.com/Mel-SRK/My_config)（Arch + niri + Noctalia dotfiles 留档）加上本机在用的 CTF 工具箱（见 [CTF Toolkit](#ctf-toolkit)）。
+
+> 下文「当前环境」到「Hermes gateway」各节是**上游原文**，描述的是 Mel-SRK 的 ThinkPad T14 Gen4 (AMD)：`niri/config.kdl`、`kanshi/config`、`home/.zshrc`、`home/.gitconfig`、`foot/foot.ini` 等也都是那份配置。本机实际配置不同，先看 [本机差异](#本机差异相对上游)——直接 `./install.sh --apply` 会用上游版本覆盖本机定制。
 
 ## 预览
 
@@ -35,6 +37,26 @@ toolkit                        # 浏览器模式：http://127.0.0.1:8787/
 ```
 
 桌面壳另需 `npm install && npx tauri build`，再跑 `bash scripts/install-desktop.sh` 装入口。安装细节、工具清单、`tools.toml` schema、自测与已知限制见 [docs/toolkit.md](docs/toolkit.md)。
+
+## 本机差异（相对上游）
+
+下面这张表是这台机器与上游那份 ThinkPad 配置的实际差别。仓库里除工具箱外的文件仍是上游版本，本机改动只在 `~/.config` / `~/` 下，`tools/check-sync.sh` 会把这些差异列成 DIFF。
+
+| 项 | 上游 | 本机 |
+|---|---|---|
+| 显示 | 内屏 `eDP-1` 2240x1400@60.002 scale 1.166667；外接 `DP-1`/`DP-2` HKC 2560x1440@200 scale 1 | 内屏 `eDP-1` 2560x1600@240 scale 1.5；外接 `HDMI-A-1` 1920x1080@240 scale 1 |
+| 显示器布局 | `kanshi/config` 三个 profile，热插拔交给 kanshi | 没启用 kanshi（包装着、service inactive）；布局由 Noctalia 显示器面板写 `~/.config/niri/outputs.kdl`，开关屏在面板里点 |
+| niri 配置 | 仓库 `niri/config.kdl`：显式 `output` 块、`swaybg` 壁纸 | 不入库：本机 `~/.config/niri/config.kdl` 是改写版（`include "outputs.kdl"`、不跑 `swaybg`、键位浮层用中文、加了 Manggo 窗口规则） |
+| 终端 | Foot，CaskaydiaCove Nerd Font Mono 11 pt、Noctalia 配色、85% 不透明 + 模糊 | alacritty 0.17；`Mod+T` 仍绑 alacritty。foot 已安装、`foot/foot.ini` 已同步，只是不当默认终端 |
+| 登录进 tmux | `home/.zshrc` 里 `exec tmux`（TS2K，多终端开 view 会话） | 由 alacritty `[terminal.shell]` 执行 `tmux new-session -A -s Xendr1a`，`.zshrc` 不 attach |
+| 剪贴板工具 | `/usr/bin/wl-copy`、`wl-paste`（系统包） | 手工解包在 `~/opt/wl-clipboard`，软链到 `~/.local/bin`；niri 的截图/OCR 绑定里显式加 `PATH="$HOME/.local/bin:$PATH"` |
+| Manggo | 按 [docs/manggo.md](docs/manggo.md) 手工装 1.3.9 | pacman 包 `manggo 1.3.9`（`/opt/manggo` + `/usr/bin/manggo`），自启项 `com.pylogmon.Manggo.desktop`；窗口 app-id 实测 `com.pylogmon.Manggo` |
+| git | `home/.gitconfig`：Mel-SRK 身份、delta pager、socks5 代理 | 本机身份 `Xendr1a`，credential helper 指 `~/.local/bin/gh`，没配 delta pager |
+| 输入法 | fcitx5 + 云拼音，留档默认组 `pinyin` | fcitx5 5.1.23，组名「默认」，`pinyin.conf` 等按本机调过 |
+| 未部署 | `systemd/user/kanshi.service`、`micmute-led/*`、`hermes-gateway.service.d/*`、`61-battery-local.hwdb` | 本机都没有，`./test/run --host` 会报告 |
+| nvim 插件 | 仓库 `nvim/lazy-lock.json` | 实机装完插件后锁文件更新过，与仓库不同 |
+
+仓库自带的 `test/cases/` 在这台机器上 11/11 通过（补装 `foot`、`manggo` 之后）。
 
 ## 当前环境
 
@@ -145,8 +167,6 @@ greetd 的两个文件（`/etc/greetd/config.toml`、`/etc/pam.d/greetd`）装�
 运行 `./test/run` 执行 `test/cases/` 下的本地用例；`./test/run --host` 额外检查实机漂移。
 可以用 `./test/run --filter manifest` 筛选文件名。失败时看输出中的日志路径，
 每个用例的完整 stdout/stderr 都保留在打印的日志目录中。
-
-CTF 工具箱的自测单独跑（`python3 -m unittest discover -s selftest -t .`、`python3 selftest/smoke.py`），见 [docs/toolkit.md](docs/toolkit.md)。
 
 ## 软件包
 
