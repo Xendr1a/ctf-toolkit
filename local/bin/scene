@@ -3,14 +3,20 @@
 #
 #   scene write     写作：勿扰 + 切到「写作」工作区（空则带起 alacritty + firefox）
 #   scene present   演示：勿扰 + 双屏最高亮度 + 关夜间色温 + caffeine 防熄屏
-#   scene ctf       打题：勿扰 + 切到「打题」工作区（空则带起 alacritty + firefox）
+#   scene ctf       打题：勿扰 + 切到「打题」工作区（空则带起 alacritty（cwd 落题目目录）
+#                    + ctf-toolkit 本地 Web 界面当简介；GZCTF_URL 填了再补一个 GZCTF 标签页）
 #
 # 再按一次同场景 = 退出并还原；直接切别的场景时先还原旧的再进新的。
 # 键位（niri config.kdl）：Mod+Shift+W / Mod+Shift+D / Mod+Shift+T。
 # 已知取舍：夜间色温没有查询接口，演示退出固定 nightlight-enable；
 # 若平时就一直关着色温，退出演示后需要手动 nightlight-disable。
 #
-# 依赖：niri msg、noctalia msg、jq、ddcutil（外接屏亮度读写）
+# 依赖：niri msg、noctalia msg（OSD 反馈走 osd-show）、jq、curl、ddcutil（外接屏亮度读写）
+
+CTF_DIR="$HOME/ctf/challenges"           # 打题模式的终端落点（题目目录）
+GZCTF_URL=""                             # 自训赛开起来后填 URL，打题模式会多开一个 GZCTF 标签页
+TOOLKIT_PORT=8787                        # ctf-toolkit Web 界面端口（tools.toml [app] port）
+# 依赖：niri msg、noctalia msg（OSD 反馈走 osd-show）、jq、ddcutil（外接屏亮度读写）
 
 set -euo pipefail
 
@@ -19,9 +25,15 @@ SAVED_DIR="$STATE_DIR/saved"
 CURRENT_FILE="$STATE_DIR/current"
 BACKLIGHT=/sys/class/backlight/nvidia_0   # eDP-1 的背光设备
 
+CTF_DIR="$HOME/ctf/challenges"           # 打题模式的终端落点（题目目录）
+GZCTF_URL=""                             # 自训赛开起来后填 URL，打题模式会多开一个 GZCTF 标签页
+
 mkdir -p "$SAVED_DIR"
 
-notify() { noctalia msg notification-show "场景切换" "$1" >/dev/null 2>&1 || true; }
+# OSD 弹条反馈（音量/亮度那种，不吃勿扰）；失败不影响场景切换本身
+osd() {  # $1=图标（osd.dnd.on 等） $2=文案
+    noctalia msg osd-show "$(printf '{"icon":"%s","value":"%s"}' "$1" "$2")" >/dev/null 2>&1 || true
+}
 
 # ---------- 勿扰 ----------
 dnd_get() { noctalia msg notification-dnd-status 2>/dev/null || echo off; }
@@ -54,9 +66,25 @@ ws_window_count() {  # $1=工作区名 → 该区窗口数
     niri msg -j windows | jq --argjson id "$id" '[.[] | select(.workspace_id == $id)] | length'
 }
 
-spawn_apps() {  # 空工作区带起终端 + 浏览器（落在当前焦点工作区）
+spawn_apps() {  # 写作：空工作区带起终端 + 浏览器（落在当前焦点工作区）
     niri msg action spawn -- alacritty
     niri msg action spawn -- firefox
+}
+
+spawn_ctf_apps() {  # 打题：终端落题目目录（-e zsh 绕开 alacritty 的 tmux 包装，cwd 才有效），
+    # 工具箱 Web 界面当简介：已在跑就直接用，没跑就 --no-browser 静默起，等端口通了再自己开标签页
+    niri msg action spawn -- alacritty --working-directory "$CTF_DIR" -e zsh
+    if ! pgrep -f "toolkit\.py" >/dev/null 2>&1; then
+        niri msg action spawn -- "$HOME/.local/bin/toolkit" --no-browser
+        for _ in {1..20}; do
+            curl -sf -o /dev/null "http://127.0.0.1:$TOOLKIT_PORT" && break
+            sleep 0.25
+        done
+    fi
+    # 开标签页前重拉焦点：迟到几秒的浏览器窗口也要落在打题区
+    niri msg action focus-workspace 打题 >/dev/null
+    niri msg action spawn -- xdg-open "http://127.0.0.1:$TOOLKIT_PORT"
+    [[ -z $GZCTF_URL ]] || niri msg action spawn -- xdg-open "$GZCTF_URL"
 }
 
 # ---------- 进出场景 ----------
@@ -79,7 +107,9 @@ enter_write() {
 enter_ctf() {
     enter_common
     niri msg action focus-workspace 打题 >/dev/null
-    (( $(ws_window_count 打题) > 0 )) || spawn_apps
+    (( $(ws_window_count 打题) > 0 )) || spawn_ctf_apps
+    # 兜底再拉一次焦点：终端起窗、OSD、迟到的标签页都可能把焦点带走
+    niri msg action focus-workspace 打题 >/dev/null
 }
 
 enter_present() {
@@ -134,7 +164,7 @@ if [[ $scene == "$current" ]]; then
         *)       exit_common ;;
     esac
     rm -f "$CURRENT_FILE"
-    notify "已退出${NAME[$scene]}模式"
+    osd osd.dnd.off "已退出${NAME[$scene]}模式"
     exit 0
 fi
 
@@ -155,7 +185,7 @@ esac
 echo "$scene" > "$CURRENT_FILE"
 
 case $scene in
-    write)   notify "写作模式：勿扰开，其余窗口留在原工作区" ;;
-    present) notify "演示模式：最高亮度、关色温、防熄屏" ;;
-    ctf)     notify "打题模式：勿扰开，工作区已就位" ;;
+    write)   osd osd.dnd.on  "写作模式：勿扰开，其余窗口留在原工作区" ;;
+    present) osd osd.caffeine.on "演示模式：最高亮度、关色温、防熄屏" ;;
+    ctf)     osd osd.dnd.on  "打题模式：题目目录已就位" ;;
 esac
