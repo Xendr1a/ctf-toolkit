@@ -18,6 +18,7 @@
 | `dotfiles/tmux/.tmux.conf.local` | `~/.config/tmux/.tmux.conf.local` | 本机 | 状态栏与配色（482 行差异），主题上游的 `.tmux.conf` 未改 |
 | `dotfiles/zsh/.zshrc` | `~/.zshrc` | 本机 | p10k instant prompt、不 `exec tmux`、别名与本地 PATH（99 行差异） |
 | `dotfiles/zsh/.p10k.zsh` | `~/.p10k.zsh` | 上游 p10k 配置 + Dragon Mist 配色 | 92 处 256 色号换成调色板 hex（374 行差异，其中约 186 行是颜色行） |
+| `dotfiles/zsh/.zshenv` | `~/.zshenv` | 本机新增 | zsh 启动环境：`~/.local/bin` 排到 PATH 前（java/javac 等 wrapper 在此）、`JAVA_HOME` 指向 JDK 17；系统 27 用 `env JAVA_HOME=/usr/lib/jvm/default <命令>` 临时切 |
 | `dotfiles/noctalia/settings.toml` | `~/.local/state/noctalia/settings.toml` | Noctalia 实际加载的生效版 | 上游没有此文件；`[bar.default] start` 末尾挂 `xendr1a/lyrics:bar`，`[plugins] enabled` 含 `xendr1a/lyrics` 与 `xendr1a/niri-displays`。与 `.config` 那份有 126 行不同 |
 
 未收录（与上游相同或本机未启用）：`niri/noctalia.kdl`、`tmux/.tmux.conf`、`kanshi/config`（本机没启用 kanshi）、`home/` 下的其他点文件。
