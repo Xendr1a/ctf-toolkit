@@ -1,0 +1,8 @@
+.git
+.gitignore
+.dockerignore
+flag.txt
+.env
+dist
+challenge.json
+README.md

@@ -5,7 +5,7 @@
 ## 特性
 
 - 纯本地：仅监听 `127.0.0.1`。浏览器模式零第三方依赖（Python 标准库 + `tomllib`），桌面模式使用系统 WebView。
-- 27 个工具 / 4 个分类，专注 Web，均带预设（列库、目录爆破、JWT 攻击、SSTI、PHP/Java 反序列化等）。
+- 29 个工具 / 4 个分类，专注 Web，均带预设（列库、目录爆破、JWT 攻击、SSTI、PHP/Java 反序列化等）。
 - 顶部「目标」框自动填充主字段（`{{TARGET}}` 占位符）；逗号/换行分隔可一次运行多个目标。
 - 多任务并行：每个 run 一个标签页，独立轮询/缓冲；关闭运行中的标签即停止；历史记录可回放。
 - 输出实时流式显示，支持停止、停止全部、复制、导出到 `~/ctf/evidence/`、查找高亮。
@@ -65,6 +65,22 @@ python3 selftest/smoke.py                       # 端到端链路（本地 PHP �
 
 CI（GitHub Actions）在每次 push 时运行单元测试、JS 语法检查与 Rust 格式检查。
 
+## 题目脚手架
+
+```bash
+toolkit new-challenge demo --cat pwn     # 生成 ./demo（默认目录 = ./<题目名>）
+cp demo/flag.txt.example demo/flag.txt   # 填真 flag；flag.txt 已被 .gitignore 忽略
+toolkit test-challenge demo              # compose up → 探端口 → 无论成败 down -v
+```
+
+分类：`pwn`（socat 挂编译二进制）、`web`（python:slim HTTP）、`crypto` / `misc`（python:slim TCP）、`reverse`（HTTP 发二进制 + 口令换 flag）。
+
+- 生成物齐套：`Dockerfile`、`docker-compose.yml`、`challenge.json`、`flag.txt.example`、`.gitignore`、`README.md`、`src/`。
+- `FLAG` 只在 compose 运行时注入，Dockerfile 不写 `ENV`/`ARG`；服务按 `GZCTF_FLAG` → `FLAG` 读取（前者由 GZCTF 动态容器平台注入）。
+- `challenge.json` 对齐 GZCTF 表单：标题/分类/类型/Flag 模板/分值/镜像/内存/CPU/存储/端口/附件；上传与启用留在 GZCTF 后台人工做。
+- `test-challenge` 只验「起得来、端口通」，不解题；优先 `docker compose`，没有则退到 `docker-compose`，两者都缺会明确报错并非零退出，失败也 teardown。
+- 纯生成：无状态、无计分、不调用 GZCTF API。
+
 ## 工具清单
 
 | 分类 | 工具 | 定位 |
@@ -72,7 +88,7 @@ CI（GitHub Actions）在每次 push 时运行单元测试、JS 语法检查与 
 | 探测 | `curl` `whatweb` `httpx` `nmap` `katana` `waybackurls` `subfinder` `dnsx` `amass` `wafw00f` `arjun` | 手工请求、指纹、存活探测、爬站、历史 URL、子域资产、WAF 识别、隐藏参数 |
 | 爆破 | `ffuf` `dirsearch` `gobuster` `feroxbuster` | 目录 / 子域 / 参数 |
 | 漏洞利用 | `sqlmap` `nuclei` `dalfox` `fenjing` `jwt_tool` `phpggc` `php_filter_chain` `ysoserial` | SQLi、模板扫描、XSS、SSTI、JWT、PHP/Java 反序列化 |
-| 本地/辅助 | `静态服务` `nc 监听` `自由命令` `CyberChef` | 起站、收 shell、任意命令、编解码 |
+| 本地/辅助 | `静态服务` `nc 监听` `自由命令` `新建题目` `题目自测` `CyberChef` | 起站、收 shell、任意命令、题目脚手架与冒烟、编解码 |
 
 工具本体不迁移，`tools.toml` 仅记录调用方式。
 
@@ -116,7 +132,9 @@ python3 -c "import tomllib;d=tomllib.load(open('tools.toml','rb'));print(len(d['
 
 ```
 toolkit.py        # 服务端：注册表加载、命令拼装、进程管理、HTTP/API
+challenge.py      # 题目脚手架：模板渲染、compose 起停与端口冒烟
 tools.toml        # 工具注册表
+templates/challenges/  # 题目模板（common + pwn/web/crypto/misc/reverse）
 web/              # 前端（原生 JS，无构建步骤）
 wordlists/        # 字典（gitignored，fetch-vendor.sh 拉取）
 vendor/cyberchef/ # 离线 CyberChef（gitignored）

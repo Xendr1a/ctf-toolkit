@@ -1,0 +1,13 @@
+# 本地自测：FLAG 只在运行时注入，不写进镜像层。
+# GZCTF 动态容器由平台注入 GZCTF_FLAG；这里的 FLAG 只服务本地 compose。
+services:
+  challenge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: {{IMAGE}}
+    environment:
+      FLAG: "${FLAG:-}"
+    ports:
+      - "127.0.0.1:${HOST_PORT:-{{PORT}}}:{{PORT}}"
+    restart: "no"
