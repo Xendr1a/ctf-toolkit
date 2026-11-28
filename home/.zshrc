@@ -112,6 +112,11 @@ if (( __have_tty )); then
         eval "$(zoxide init zsh)"
     fi
 
+    # pkgfile：command-not-found 时提示「命令属于哪个包」
+    # 数据库由系统级 pkgfile-update.timer 维护（sudo systemctl enable --now pkgfile-update.timer）
+    [[ -r /usr/share/doc/pkgfile/command-not-found.zsh ]] &&
+        source /usr/share/doc/pkgfile/command-not-found.zsh
+
     # p10k 配置
     [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
