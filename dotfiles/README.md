@@ -19,6 +19,7 @@
 | `dotfiles/zsh/.zshrc` | `~/.zshrc` | 本机 | p10k instant prompt、不 `exec tmux`、别名与本地 PATH（99 行差异） |
 | `dotfiles/zsh/.p10k.zsh` | `~/.p10k.zsh` | 上游 p10k 配置 + Dragon Mist 配色 | 92 处 256 色号换成调色板 hex（374 行差异，其中约 186 行是颜色行） |
 | `dotfiles/zsh/.zshenv` | `~/.zshenv` | 本机新增 | zsh 启动环境：`~/.local/bin` 排到 PATH 前（java/javac 等 wrapper 在此）、`JAVA_HOME` 指向 JDK 17；系统 27 用 `env JAVA_HOME=/usr/lib/jvm/default <命令>` 临时切 |
+| `dotfiles/environment.d/java-env.conf` | `~/.config/environment.d/java-env.conf` | 本机新增 | systemd 用户会话的 `JAVA_HOME`（JDK 17）；systemd 忽略这里的 PATH，见「已知限制」 |
 | `dotfiles/noctalia/settings.toml` | `~/.local/state/noctalia/settings.toml` | Noctalia 实际加载的生效版 | 上游没有此文件；`[bar.default] start` 末尾挂 `xendr1a/lyrics:bar`，`[plugins] enabled` 含 `xendr1a/lyrics` 与 `xendr1a/niri-displays`。与 `.config` 那份有 126 行不同 |
 
 未收录（与上游相同或本机未启用）：`niri/noctalia.kdl`、`tmux/.tmux.conf`、`kanshi/config`（本机没启用 kanshi）、`home/` 下的其他点文件。
@@ -43,6 +44,7 @@ install -m 644 tmux/.tmux.conf.local         ~/.config/tmux/.tmux.conf.local
 install -m 644 zsh/.zshrc                    ~/.zshrc
 install -m 644 zsh/.p10k.zsh                 ~/.p10k.zsh
 install -m 644 noctalia/settings.toml        ~/.local/state/noctalia/settings.toml
+install -m 644 environment.d/java-env.conf   ~/.config/environment.d/java-env.conf
 ```
 
 - `niri/config.kdl` 装完先校验：`niri validate -c ~/.config/niri/config.kdl`；niri 会热重载。
@@ -72,6 +74,19 @@ install -m 644 noctalia/settings.toml ~/.config/noctalia/settings.toml
 
 注意：Noctalia 运行时会整份重写 state 那份（改设置、加组件都会写盘），所以仓库里这份是"已知能工作"的快照，不是实时同步源；装之前先备份目标。仓库版本已脱敏：路径统一写成 `/home/user`，`[location] address` 留空，壁纸与头像用 `wallpaper.png` / `avatar.png` 这类占位文件名；本机真实值仍然在 `~/.local/state/noctalia/settings.toml`。
 
+### bash 会话（仓库不收整份 `.bashrc` / `.profile`）
+
+bash 不读 `~/.zshenv`。本仓库**不收录**整份 `.bashrc` / `.profile`——它们通常夹着别名、本机路径和个人内容，public 仓库里整份公开不好收。装的时候在下面两个文件末尾各追加两行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+export JAVA_HOME="$HOME/opt/jdk/jdk-17.0.21+9"
+```
+
+- `~/.profile`：login shell（`sh -lc`、`bash -lc`）用。
+- `~/.bashrc`：交互 bash 用；`PATH` 那行重复执行无害。
+- 若 `~/.bash_profile` 只 source 了 `.bashrc`，非交互 login bash 还是拿不到——补一行 `[[ -f ~/.profile ]] && . ~/.profile`，或把两行直接写进 `.bash_profile`。
+
 ## Dragon Mist 主题来源
 
 色板以 `dotfiles/alacritty/themes/dragon-mist.toml` 为准（低饱和暖灰，背景 `#262421`，前景 `#c5c9c5`）：
@@ -88,6 +103,13 @@ install -m 644 noctalia/settings.toml ~/.config/noctalia/settings.toml
 | 文字 / 亮文字 | `#c5c9c5` / `#d7dbd5` |
 
 foot 主题由它派生 16 色；p10k 的段颜色按原 256 色的色相归到同族 hex、低饱和按明度归灰，`CRITICAL/ERROR/NOT_WRITABLE/NON_EXISTENT` 强制红，`WARNING/LOW/DISCONNECTED` 强制黄，`*_TEST_FOREGROUND` 强制绿。
+
+## 已知限制
+
+- `JAVA_HOME` 固定指向 JDK 17，与 `~/.local/bin` 里的 `java`/`javac` wrapper 一致；系统自带 JDK 27 临时使用：`env JAVA_HOME=/usr/lib/jvm/default <命令>`。
+- systemd 用户会话会**忽略** `environment.d` 里的 `PATH`（实测 `systemctl --user show-environment` 的 PATH 不变），所以 systemd 直接拉起的进程里 `java` 可能仍是系统版本；Gradle/Maven 读 `JAVA_HOME`，不受影响。
+- 没有把 wrapper 链到 `/usr/local/bin`：需要 root，且会把全系统默认改成 17，影响面大于收益。
+- 若以后出现需要 `java` 也为 17 的 GUI 程序，在 `~/.config/niri/config.kdl` 的 `environment {}` 里补一条含 `~/.local/bin` 的 `PATH` 即可，不动系统目录。
 
 ## 不做的事
 
