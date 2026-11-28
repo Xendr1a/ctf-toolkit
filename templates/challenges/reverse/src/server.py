@@ -9,12 +9,12 @@ PORT = {{PORT}}
 PASSWORD = "{{NAME}}-r3v"
 CHALL = Path("/app/chall")
 
-INDEX = b"""<!doctype html>
+INDEX = """<!doctype html>
 <meta charset="utf-8">
 <title>{{NAME}}</title>
 <h1>{{NAME}}</h1>
 <p>下载 <a href="/chall">/chall</a>，逆出口令后提交到 <code>/flag?password=...</code>。</p>
-"""
+""".encode("utf-8")
 
 
 def flag_value() -> str:

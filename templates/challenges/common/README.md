@@ -47,6 +47,7 @@ HOST_PORT=12345 docker compose up -d
 
 FLAG 的读取顺序是 `GZCTF_FLAG` → `FLAG`。`GZCTF_FLAG` 由 GZCTF 动态容器平台注入；
 `FLAG` 只用于本地 compose。Dockerfile 里没有 `ENV FLAG` / `ARG FLAG`，flag 也不会写进镜像内文件。
+不导出 `FLAG` 直接起容器时，服务会输出 `flag{unset}`；`docker compose down -v` 不受影响。
 
 ## 自测
 

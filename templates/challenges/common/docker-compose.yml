@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     image: {{IMAGE}}
     environment:
-      FLAG: "${FLAG:?先 export FLAG（见 README）}"
+      FLAG: "${FLAG:-}"
     ports:
       - "127.0.0.1:${HOST_PORT:-{{PORT}}}:{{PORT}}"
     restart: "no"

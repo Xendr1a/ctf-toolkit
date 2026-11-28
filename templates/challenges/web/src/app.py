@@ -6,12 +6,12 @@ from urllib.parse import parse_qs, urlsplit
 
 PORT = {{PORT}}
 
-INDEX = b"""<!doctype html>
+INDEX = """<!doctype html>
 <meta charset="utf-8">
 <title>{{NAME}}</title>
 <h1>{{NAME}}</h1>
 <p>Web 题目骨架。出题人替换 src/app.py 里的逻辑。</p>
-"""
+""".encode("utf-8")
 
 
 def flag_value() -> str:
